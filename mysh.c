@@ -1,30 +1,30 @@
-// for the outline:
-// data structure to use:
-    // create a struct that is a linked list/tree like structure that connects the parent process to its children
-        // this struct also contains the unique process id 
-    `   // and a variable that keeps track of if the process was a success ??
-        // and a list of that node's child processes
-            // put the list in order of the piping/redirection where the last index is the destination
-        // terminate this list when done with those processes 
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/wait.h>
+#include <dirent.h>
+#include <ctype.h>
 
-    // no need to create a list of parent nodes because only one parent node can exist at a time (mysh)
-        // in the context of this project
+#define BUF_SIZE 4096
+#define INIT_CAP 16
 
-// create a temporary list for the tokenizing part bc the tokenizing part just splits up
-// the sentence so we know what command is being called
-// so basically a string 
+typedef struct {
+    char **tokens;
+    int count;
+    int cap;
+} token_list_t;
+
+static int interactive = 0;
+static char *home_dir = NULL;
+
+static char leftover[BUF_SIZE];
+static int  leftover_len = 0;
 
 
-typedef struct process{
-    char **env; // input information or string of action
-    pid_t pid; // unique process id
-    int success; // 0 if success 1 if not
-    struct *next; // list of child nodes starts at the next node
-    command_t command; // commands that was entered at this process
-}process_t;
+int read_line(int fd, char *out, int out_size);
+void tokenize(const char *line, token_list_t *tl);
+void expand_wildcard(const char *token, token_list_t *tl);
 
-typedef struct command{
-    char **strCommand; // command from terminal
-    // definitely adding more or changing it around
-}command_t;
-
+int main(int argc, char *argv[]);
