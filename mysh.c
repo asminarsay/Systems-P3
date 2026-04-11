@@ -19,12 +19,43 @@ typedef struct {
 static int interactive = 0;
 static char *home_dir = NULL;
 
-static char leftover[BUF_SIZE];
-static int  leftover_len = 0;
+void token_list_add(token_list_t *tl, const char *tok) {
+    if (tl->count == tl->cap) {
+        tl->cap *= 2;
+        tl->tokens = realloc(tl->tokens, tl->cap * sizeof(char *));
+    }
+    tl->tokens[tl->count++] = strdup(tok);
+}
 
+void tokenize(const char *line, token_list_t *tl) {
+    int i = 0;
+    while (line[i] != '\0' && line[i] != '\n') {
+        if (isspace((unsigned char)line[i])) { i++; continue; }
 
-int read_line(int fd, char *out, int out_size);
-void tokenize(const char *line, token_list_t *tl);
-void expand_wildcard(const char *token, token_list_t *tl);
+        if (line[i] == '#') break;
 
-int main(int argc, char *argv[]);
+        if (line[i] == '<' || line[i] == '>' || line[i] == '|') {
+            char s[2] = { line[i], '\0' };
+            token_list_add(tl, s);
+            i++;
+            continue;
+        }
+
+        int start = i;
+        while (line[i] != '\0' && line[i] != '\n' &&
+               !isspace((unsigned char)line[i]) &&
+               line[i] != '<' && line[i] != '>' &&
+               line[i] != '|' && line[i] != '#') {
+            i++;
+        }
+        int len = i - start;
+        char tok[len + 1];
+        memcpy(tok, line + start, len);
+        tok[len] = '\0';
+        token_list_add(tl, tok);
+    }
+}
+
+int main(int argc, char *argv[]) {
+    return EXIT_SUCCESS;
+}
