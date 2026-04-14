@@ -214,6 +214,131 @@ int apply_redirection(const char *infile, const char *outfile, int in_pipe) {
     return 0;
 }
 
+void token_list_init(token_list_t *tl) {
+    tl->tokens = malloc(INIT_CAP * sizeof(char *));
+    tl->count = 0;
+    tl->cap = INIT_CAP;
+}
+
+void token_list_free(token_list_t *tl) {
+    for (int i = 0; i < tl->count; i++) free(tl->tokens[i]);
+    free(tl->tokens);
+    tl->tokens = NULL;
+    tl->count = 0;
+    tl->cap = 0;
+}
+
+static char leftover[BUF_SIZE];
+static int leftover_len = 0;
+
+int read_line(int fd, char *out, int out_size) {
+    int pos = 0;
+    while (leftover_len > 0 && pos < out_size - 1) {
+        char c = leftover[0];
+        memmove(leftover, leftover + 1, --leftover_len);
+        out[pos++] = c;
+        if (c == '\n') { out[pos] = '\0'; return pos; }
+    }
+    char tmp[BUF_SIZE];
+    while (pos < out_size - 1) {
+        int n = read(fd, tmp, sizeof(tmp));
+        if (n <= 0) {
+            if (pos == 0) return -1;
+            out[pos] = '\0';
+            return pos;
+        }
+        for (int i = 0; i < n; i++) {
+            if (tmp[i] == '\n') {
+                out[pos++] = '\n';
+                out[pos] = '\0';
+                int rem = n - i - 1;
+                if (rem > 0) { memcpy(leftover, tmp + i + 1, rem); leftover_len = rem; }
+                return pos;
+            }
+            out[pos++] = tmp[i];
+            if (pos >= out_size - 1) break;
+        }
+    }
+    out[pos] = '\0';
+    return pos;
+}
+
 int main(int argc, char *argv[]) {
+    int input_fd;
+
+    if (argc > 2) {
+        fprintf(stderr, "Usage: mysh [script]\n");
+        return EXIT_FAILURE;
+    }
+
+    if (argc == 2) {
+        input_fd = open(argv[1], O_RDONLY);
+        if (input_fd < 0) { perror(argv[1]); return EXIT_FAILURE; }
+        interactive = 0;
+    } else {
+        input_fd = STDIN_FILENO;
+        interactive = isatty(STDIN_FILENO);
+    }
+
+    home_dir = getenv("HOME");
+    if (!home_dir) home_dir = "/";
+
+    if (interactive) write(STDOUT_FILENO, "Welcome to my shell!\n", 21);
+
+    int should_exit = 0;
+    char line[BUF_SIZE];
+
+    while (!should_exit) {
+        // TODO (partner): print prompt if interactive
+
+        if (read_line(input_fd, line, sizeof(line)) == -1) break;
+
+        // step 1: tokenize
+        token_list_t tl;
+        token_list_init(&tl);
+        tokenize(line, &tl);
+
+        if (tl.count == 0) { token_list_free(&tl); continue; }
+
+        // step 2: expand wildcards
+        token_list_t expanded;
+        token_list_init(&expanded);
+        for (int i = 0; i < tl.count; i++) {
+            if (strcmp(tl.tokens[i], "<") == 0 || strcmp(tl.tokens[i], ">") == 0 ||
+                strcmp(tl.tokens[i], "|") == 0)
+                token_list_add(&expanded, tl.tokens[i]);
+            else
+                expand_wildcard(tl.tokens[i], &expanded);
+        }
+        token_list_free(&tl);
+
+        // step 3: parse redirection
+        char *infile, *outfile;
+        int redir_ok = parse_redirection(&expanded, &infile, &outfile);
+
+        // debug: print what we parsed
+        printf("argv:");
+        for (int i = 0; i < expanded.count; i++) printf(" [%s]", expanded.tokens[i]);
+        printf("\n");
+        if (infile) printf("  stdin: %s\n", infile);
+        if (outfile) printf("  stdout: %s\n", outfile);
+        if (redir_ok < 0) printf("  (syntax error)\n");
+
+        // check for exit
+        if (expanded.count > 0 && strcmp(expanded.tokens[0], "exit") == 0)
+            should_exit = 1;
+
+        // TODO (partner): check for built-ins (cd, pwd, which)
+        // TODO (partner): fork + apply_redirection + execv
+        // TODO (partner): handle pipes (split expanded on |)
+        // TODO (partner): waitpid + report status
+
+        free(infile);
+        free(outfile);
+        token_list_free(&expanded);
+    }
+
+    if (interactive) write(STDOUT_FILENO, "Exiting my shell.\n", 18);
+    if (input_fd != STDIN_FILENO) close(input_fd);
     return EXIT_SUCCESS;
 }
