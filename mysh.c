@@ -19,7 +19,7 @@ typedef struct{
 static int interactive = 0;
 static char *home_dir = NULL;
 
-void token_list_add(token_list_t *tl, const char *tok){
+void token_list_add(token_list_t *tl, char *tok){
     if(tl->count + 1 >= tl->cap){
         tl->cap *= 2;
         tl->tokens = realloc(tl->tokens, tl->cap * sizeof(char *));
@@ -28,7 +28,7 @@ void token_list_add(token_list_t *tl, const char *tok){
     tl->tokens[tl->count] = NULL;
 }
 
-void tokenize(const char *line, token_list_t *tl){
+void tokenize(char *line, token_list_t *tl){
     int i = 0;
     while(line[i] != '\0' && line[i] != '\n'){
         if (isspace((unsigned char)line[i])){ 
@@ -62,14 +62,14 @@ void tokenize(const char *line, token_list_t *tl){
     }
 }
 
-void expand_wildcard(const char *token, token_list_t *tl){
+void expand_wildcard(char *token, token_list_t *tl){
     if (!strchr(token, '*')){
         token_list_add(tl, token);
         return;
     }
 
-    const char *last_slash = strrchr(token, '/');
-    const char *pattern;
+    char *last_slash = strrchr(token, '/');
+    char *pattern;
     char dir[BUF_SIZE];
 
     if (last_slash){
@@ -82,9 +82,9 @@ void expand_wildcard(const char *token, token_list_t *tl){
         pattern = token;
     }
 
-    const char *star = strchr(pattern, '*');
+    char *star = strchr(pattern, '*');
     int pre_len = star - pattern;
-    const char *suffix = star + 1;
+    char *suffix = star + 1;
     int suf_len = strlen(suffix);
 
     DIR *dp = opendir(dir);
@@ -98,7 +98,7 @@ void expand_wildcard(const char *token, token_list_t *tl){
 
     struct dirent *ent;
     while ((ent = readdir(dp)) != NULL){
-        const char *name = ent->d_name;
+        char *name = ent->d_name;
 
         if (name[0] == '.' && pattern[0] != '.') continue;
 
@@ -138,7 +138,6 @@ void expand_wildcard(const char *token, token_list_t *tl){
     }
 }
 
-// pulls < and > out of tl and sets infile/outfile
 int parse_redirection(token_list_t *tl, char **infile, char **outfile){
     *infile = NULL;
     *outfile = NULL;
@@ -188,18 +187,16 @@ int parse_redirection(token_list_t *tl, char **infile, char **outfile){
     return ok ? 0 : -1;
 }
 
-// opens files and does dup2 for redirection in child process
-int apply_redirection(const char *infile, const char *outfile, int in_pipe){
+int apply_redirection(char *infile, char *outfile, int in_pipe){
     if(infile){
         int fd = open(infile, O_RDONLY);
         if(fd < 0){
-            perror(infile);
+            printf("error opening %s\n", infile);
             return -1;
         }
         dup2(fd, STDIN_FILENO);
         close(fd);
     } else if(!interactive && !in_pipe){
-        // batch mode defaults to /dev/null
         int fd = open("/dev/null", O_RDONLY);
         if(fd >= 0){
             dup2(fd, STDIN_FILENO);
@@ -209,7 +206,7 @@ int apply_redirection(const char *infile, const char *outfile, int in_pipe){
     if(outfile){
         int fd = open(outfile, O_WRONLY | O_CREAT | O_TRUNC, 0640);
         if(fd < 0){
-            perror(outfile);
+            printf("error opening %s\n", outfile);
             return -1;
         }
         dup2(fd, STDOUT_FILENO);
@@ -284,8 +281,7 @@ void bare_names(token_list_t *tl){
     }
 }
 
-// like bare_names but with redirection support
-void exec_redirect(token_list_t *tl, const char *infile, const char *outfile){
+void exec_redirect(token_list_t *tl, char *infile, char *outfile){
     char *path;
     if(strchr(tl->tokens[0],'/') != NULL){
         path = strdup(tl->tokens[0]);
@@ -299,13 +295,13 @@ void exec_redirect(token_list_t *tl, const char *infile, const char *outfile){
 
     pid_t pid = fork();
 
-    if(pid == 0){ // child: set up redirection then exec
+    if(pid == 0){
         if(apply_redirection(infile, outfile, 0) < 0){
-            _exit(1);
+            exit(1);
         }
         execv(path, tl->tokens);
-        perror(path);
-        _exit(1);
+        printf("exec failed\n");
+        exit(1);
     }
     else if(pid > 0){
         int status;
@@ -313,7 +309,7 @@ void exec_redirect(token_list_t *tl, const char *infile, const char *outfile){
         free(path);
     }
     else{
-        perror("fork");
+        printf("error in fork()\n");
         free(path);
     }
 }
@@ -404,22 +400,21 @@ void built_in(token_list_t *tl){
     }
 }
 
-// runs a built-in inside a child with redirection applied
-void builtin_redirect(token_list_t *tl, const char *infile, const char *outfile){
+void builtin_redirect(token_list_t *tl, char *infile, char *outfile){
     pid_t pid = fork();
     if(pid == 0){
         if(apply_redirection(infile, outfile, 0) < 0){
-            _exit(1);
+            exit(1);
         }
         built_in(tl);
-        _exit(0);
+        exit(0);
     }
     else if(pid > 0){
         int status;
         waitpid(pid, &status, 0);
     }
     else{
-        perror("fork");
+        printf("error in fork()\n");
     }
 }
 
