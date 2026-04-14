@@ -28,7 +28,7 @@ void token_list_add(token_list_t *tl, const char *tok) {
     tl->tokens[tl->count++] = strdup(tok);
 }
 
-
+//suppose to take in raw line of text to split and token list
 void tokenize(const char *line, token_list_t *tl) {
     int i = 0;
     while (line[i] != '\0' && line[i] != '\n') {
@@ -165,11 +165,11 @@ int parse_redirection(token_list_t *tl, char **infile, char **outfile) {
             if (strcmp(next, "<") == 0 || strcmp(next, ">") == 0 || strcmp(next, "|") == 0) {
                 fprintf(stderr, "syntax error near %s\n", tok);
                 ok = 0;
-                i++;
+                i += 2;
                 continue;
             }
-            if (tok[0] == '<') *infile = strdup(next);
-            else               *outfile = strdup(next);
+            if (tok[0] == '<') { free(*infile); *infile = strdup(next); }
+            else               { free(*outfile); *outfile = strdup(next); }
             i += 2;
         } else {
             clean.tokens[clean.count++] = strdup(tok);
@@ -184,6 +184,34 @@ int parse_redirection(token_list_t *tl, char **infile, char **outfile) {
     tl->cap = clean.cap;
 
     return ok ? 0 : -1;
+}
+
+int apply_redirection(const char *infile, const char *outfile, int in_pipe) {
+    if (infile) {
+        int fd = open(infile, O_RDONLY);
+        if (fd < 0) {
+            perror(infile);
+            return -1;
+        }
+        dup2(fd, STDIN_FILENO);
+        close(fd);
+    } else if (!interactive && !in_pipe) {
+        int fd = open("/dev/null", O_RDONLY);
+        if (fd >= 0) {
+            dup2(fd, STDIN_FILENO);
+            close(fd);
+        }
+    }
+    if (outfile) {
+        int fd = open(outfile, O_WRONLY | O_CREAT | O_TRUNC, 0640);
+        if (fd < 0) {
+            perror(outfile);
+            return -1;
+        }
+        dup2(fd, STDOUT_FILENO);
+        close(fd);
+    }
+    return 0;
 }
 
 int main(int argc, char *argv[]) {
