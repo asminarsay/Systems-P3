@@ -249,32 +249,34 @@ char* bare_name_search(char *program){
 
 
 // executes program for bare name
-void bare_names(token_list_t *tl){
-    
-    // if(strchr(tl->tokens[0],"/") != NULL){
-
-    // }
-
-    // uses the search of names and then stores it so it can be used in access
-    char *path = bare_name_search(tl->tokens[0]);
+void bare_names(token_list_t *tl, const char *infile, const char *outfile){
+    char *path;
+    if (strchr(tl->tokens[0], '/') != NULL) {
+        path = strdup(tl->tokens[0]);
+    } else {
+        path = bare_name_search(tl->tokens[0]);
+    }
     if(path == NULL){
-        printf("bare_names: program not found\n");
+        fprintf(stderr, "%s: command not found\n", tl->tokens[0]);
         return;
     }
 
     pid_t pid = fork();
 
-    if(pid == 0){ // in child process
+    if(pid == 0){
+        if (apply_redirection(infile, outfile, 0) < 0) _exit(1);
         execv(path, tl->tokens);
-        printf("LOG: if it reached here child failed\n");
+        perror(path);
+        _exit(1);
     }
-    else if(pid > 0){ // in parent process
-        waitpid(pid,NULL,0);
-        printf("LOG: bare names: child closed\n");
+    else if(pid > 0){
+        int status;
+        waitpid(pid, &status, 0);
+        free(path);
     }
     else{
-        printf("error in fork()\n");
-        return;
+        perror("fork");
+        free(path);
     }
 }
 
@@ -290,11 +292,8 @@ int which_check(token_list_t *tl){
 
 // built in functions include:
     // cd, pwd, which, and exit
-void built_in(token_list_t *tl){
-    printf("LOG: In built in\n");
+int run_builtin_core(token_list_t *tl) {
     if(strcmp(tl->tokens[0],"cd") == 0){
-        printf("LOG: in cd\n");
-        // checks for excess of parameters
         char *newDir;
         if(tl->count == 1){
             newDir = getenv("HOME");
@@ -302,65 +301,74 @@ void built_in(token_list_t *tl){
         else if (tl->count == 2){
             newDir = tl->tokens[1];
         }
-        else{ 
-            printf("cd: too many arguments\n");   
-            return;         
-        }
-
-        int success = chdir(newDir);
-        if(success != 0){
-            printf("cd: no such file or directory\n");
-            return;
-        }
         else{
-            printf("cd: now in %s\n",newDir);
+            fprintf(stderr, "cd: too many arguments\n");
+            return 1;
         }
-
+        if(chdir(newDir) != 0){
+            perror("cd");
+            return 1;
+        }
+        return 0;
     }
 
     else if(strcmp(tl->tokens[0],"pwd") == 0){
-        printf("LOG: in pwd\n");
-
         char buffer[1024];
-        char *currDir = getcwd(buffer,sizeof(buffer));
-        if(currDir == NULL){
-            printf("pwd: no working directory found\n");
+        if(getcwd(buffer,sizeof(buffer)) == NULL){
+            perror("pwd");
+            return 1;
         }
-        else{
-            printf("pwd: %s\n",buffer);
-        }
+        printf("%s\n",buffer);
+        return 0;
     }
 
     else if(strcmp(tl->tokens[0],"which") == 0){
-        printf("LOG: in which\n");
-
-        if(tl->count == 1){
-            printf("which: not the correct amount of arguments\n");
-            return;
+        if(tl->count != 2){
+            return 1;
         }
-        if(which_check(tl) == -1){ 
-            printf("which: cannot take built-in commands as arguments\n");
-            return;
+        if(which_check(tl) == -1){
+            return 1;
+        }
+        char *path = bare_name_search(tl->tokens[1]);
+        if(path == NULL){
+            return 1;
+        }
+        printf("%s\n",path);
+        free(path);
+        return 0;
+    }
+
+    return 0;
+}
+
+void built_in(token_list_t *tl, const char *infile, const char *outfile, int *should_exit){
+    if(strcmp(tl->tokens[0],"exit") == 0){
+        *should_exit = 1;
+        return;
+    }
+
+    if(strcmp(tl->tokens[0],"cd") == 0 && !infile && !outfile){
+        run_builtin_core(tl);
+        return;
+    }
+
+    if(infile || outfile){
+        pid_t pid = fork();
+        if(pid == 0){
+            if(apply_redirection(infile, outfile, 0) < 0) _exit(1);
+            int ret = run_builtin_core(tl);
+            _exit(ret);
+        }
+        else if(pid > 0){
+            int status;
+            waitpid(pid, &status, 0);
         }
         else{
-            char *path = bare_name_search(tl->tokens[1]);
-            if(path == NULL){
-                printf("which: program not found\n");
-                return;
-            }
-            printf("which: %s\n",path);
-            return;
+            perror("fork");
         }
-    
     }
-
-    else if(strcmp(tl->tokens[0],"exit") == 0){
-        printf("LOG: in exit\n");
-        exit(0);
-    }
-
     else{
-        return;
+        run_builtin_core(tl);
     }
 }
 
@@ -427,10 +435,11 @@ void apply_piping(token_list_t *tl){
 
             // check for built in or bare 
             if(strcmp(split[i].tokens[0],"cd") == 0 || strcmp(split[i].tokens[0],"pwd") == 0 || strcmp(split[i].tokens[0],"which") == 0 || strcmp(split[i].tokens[0],"exit") == 0){
-                built_in(&split[i]);
+                int dummy_exit = 0;
+                built_in(&split[i], NULL, NULL, &dummy_exit);
             }
             else{
-                bare_names(&split[i]);
+                bare_names(&split[i], NULL, NULL);
             }
 
             exit(0);
@@ -458,7 +467,10 @@ void apply_piping(token_list_t *tl){
     for(int i=0; i<num_pipes+1; i++){
         waitpid(pidTracker[i],NULL,0);
     }
-    
+
+    for(int i=0; i<num_pipes+1; i++){
+        token_list_free(&split[i]);
+    }
 }
 
 
@@ -552,22 +564,10 @@ int main(int argc, char *argv[]) {
         char *infile, *outfile;
         int redir_ok = parse_redirection(&expanded, &infile, &outfile);
 
-        // debug: print what we parsed
-        printf("argv:");
-        for (int i = 0; i < expanded.count; i++) printf(" [%s]", expanded.tokens[i]);
-        printf("\n");
-        if (infile) printf("  stdin: %s\n", infile);
-        if (outfile) printf("  stdout: %s\n", outfile);
-        if (redir_ok < 0) printf("  (syntax error)\n");
-
-        // check for exit
-        if (expanded.count > 0 && strcmp(expanded.tokens[0], "exit") == 0)
-            should_exit = 1;
-
-        // TODO (partner): check for built-ins (cd, pwd, which)
-        // TODO (partner): fork + apply_redirection + execv
-        // TODO (partner): handle pipes (split expanded on |)
-        // TODO (partner): waitpid + report status
+        if (redir_ok < 0) {
+            free(infile); free(outfile); token_list_free(&expanded);
+            continue;
+        }
 
         int found_pipe = 0;
 
@@ -579,15 +579,18 @@ int main(int argc, char *argv[]) {
         }
 
         if(found_pipe == 1){
+            free(infile); free(outfile); token_list_free(&expanded);
             continue;
         }
         
         if(strcmp(expanded.tokens[0],"cd") == 0 || strcmp(expanded.tokens[0],"pwd") == 0 || strcmp(expanded.tokens[0],"which") == 0 || strcmp(expanded.tokens[0],"exit") == 0){
-            built_in(&expanded);
+            built_in(&expanded, infile, outfile, &should_exit);
+            free(infile); free(outfile); token_list_free(&expanded);
             continue;
         }
         else{
-            bare_names(&expanded);
+            bare_names(&expanded, infile, outfile);
+            free(infile); free(outfile); token_list_free(&expanded);
             continue;
         }
 
