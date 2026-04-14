@@ -10,7 +10,7 @@
 #define BUF_SIZE 4096
 #define INIT_CAP 16
 
-typedef struct {
+typedef struct{
     char **tokens;
     int count;
     int cap;
@@ -19,19 +19,18 @@ typedef struct {
 static int interactive = 0;
 static char *home_dir = NULL;
 
-//adds new token string to dynamic array
-void token_list_add(token_list_t *tl, const char *tok) {
-    if (tl->count == tl->cap) {
+void token_list_add(token_list_t *tl, const char *tok){
+    if(tl->count + 1 >= tl->cap){
         tl->cap *= 2;
         tl->tokens = realloc(tl->tokens, tl->cap * sizeof(char *));
     }
     tl->tokens[tl->count++] = strdup(tok);
+    tl->tokens[tl->count] = NULL;
 }
 
-//suppose to take in raw line of text to split and token list
-void tokenize(const char *line, token_list_t *tl) {
+void tokenize(const char *line, token_list_t *tl){
     int i = 0;
-    while (line[i] != '\0' && line[i] != '\n') {
+    while(line[i] != '\0' && line[i] != '\n'){
         if (isspace((unsigned char)line[i])){ 
             i++; 
             continue;
@@ -41,7 +40,7 @@ void tokenize(const char *line, token_list_t *tl) {
             break;
         }
 
-        if (line[i] == '<' || line[i] == '>' || line[i] == '|') {
+        if(line[i] == '<' || line[i] == '>' || line[i] == '|'){
             char s[2] = { line[i], '\0' };
             token_list_add(tl, s);
             i++;
@@ -49,10 +48,10 @@ void tokenize(const char *line, token_list_t *tl) {
         }
 
         int start = i;
-        while (line[i] != '\0' && line[i] != '\n' &&
-               !isspace((unsigned char)line[i]) &&
-               line[i] != '<' && line[i] != '>' &&
-               line[i] != '|' && line[i] != '#') {
+        while(line[i] != '\0' && line[i] != '\n' &&
+              !isspace((unsigned char)line[i]) &&
+              line[i] != '<' && line[i] != '>' &&
+              line[i] != '|' && line[i] != '#'){
             i++;
         }
         int len = i - start;
@@ -63,8 +62,8 @@ void tokenize(const char *line, token_list_t *tl) {
     }
 }
 
-void expand_wildcard(const char *token, token_list_t *tl) {
-    if (!strchr(token, '*')) {
+void expand_wildcard(const char *token, token_list_t *tl){
+    if (!strchr(token, '*')){
         token_list_add(tl, token);
         return;
     }
@@ -73,12 +72,12 @@ void expand_wildcard(const char *token, token_list_t *tl) {
     const char *pattern;
     char dir[BUF_SIZE];
 
-    if (last_slash) {
+    if (last_slash){
         int dir_len = last_slash - token;
         memcpy(dir, token, dir_len);
         dir[dir_len] = '\0';
         pattern = last_slash + 1;
-    } else {
+    }else{
         strcpy(dir, ".");
         pattern = token;
     }
@@ -89,7 +88,7 @@ void expand_wildcard(const char *token, token_list_t *tl) {
     int suf_len = strlen(suffix);
 
     DIR *dp = opendir(dir);
-    if (!dp) {
+    if (!dp){
         token_list_add(tl, token);
         return;
     }
@@ -98,7 +97,7 @@ void expand_wildcard(const char *token, token_list_t *tl) {
     int nmatches = 0;
 
     struct dirent *ent;
-    while ((ent = readdir(dp)) != NULL) {
+    while ((ent = readdir(dp)) != NULL){
         const char *name = ent->d_name;
 
         if (name[0] == '.' && pattern[0] != '.') continue;
@@ -139,9 +138,8 @@ void expand_wildcard(const char *token, token_list_t *tl) {
     }
 }
 
-// returns 0 on success, -1 on syntax error
-// pulls < and > out of tl, sets infile/outfile, rebuilds tl without them
-int parse_redirection(token_list_t *tl, char **infile, char **outfile) {
+// pulls < and > out of tl and sets infile/outfile
+int parse_redirection(token_list_t *tl, char **infile, char **outfile){
     *infile = NULL;
     *outfile = NULL;
 
@@ -152,32 +150,36 @@ int parse_redirection(token_list_t *tl, char **infile, char **outfile) {
 
     int ok = 1;
     int i = 0;
-    while (i < tl->count) {
+    while(i < tl->count){
         char *tok = tl->tokens[i];
-        if (strcmp(tok, "<") == 0 || strcmp(tok, ">") == 0) {
-            if (i + 1 >= tl->count) {
-                fprintf(stderr, "syntax error near %s\n", tok);
+        if(strcmp(tok,"<") == 0 || strcmp(tok,">") == 0){
+            if(i + 1 >= tl->count){
+                fprintf(stderr,"syntax error near %s\n",tok);
                 ok = 0;
                 i++;
                 continue;
             }
-            char *next = tl->tokens[i + 1];
-            if (strcmp(next, "<") == 0 || strcmp(next, ">") == 0 || strcmp(next, "|") == 0) {
-                fprintf(stderr, "syntax error near %s\n", tok);
+            char *next = tl->tokens[i+1];
+            if(strcmp(next,"<") == 0 || strcmp(next,">") == 0 || strcmp(next,"|") == 0){
+                fprintf(stderr,"syntax error near %s\n",tok);
                 ok = 0;
                 i += 2;
                 continue;
             }
-            if (tok[0] == '<') { free(*infile); *infile = strdup(next); }
-            else               { free(*outfile); *outfile = strdup(next); }
+            if(tok[0] == '<'){ free(*infile); *infile = strdup(next); }
+            else{ free(*outfile); *outfile = strdup(next); }
             i += 2;
-        } else {
+        } else{
             clean.tokens[clean.count++] = strdup(tok);
             i++;
         }
     }
 
-    for (int j = 0; j < tl->count; j++) free(tl->tokens[j]);
+    clean.tokens[clean.count] = NULL;
+
+    for(int j=0; j<tl->count; j++){
+        free(tl->tokens[j]);
+    }
     free(tl->tokens);
     tl->tokens = clean.tokens;
     tl->count = clean.count;
@@ -186,25 +188,27 @@ int parse_redirection(token_list_t *tl, char **infile, char **outfile) {
     return ok ? 0 : -1;
 }
 
-int apply_redirection(const char *infile, const char *outfile, int in_pipe) {
-    if (infile) {
+// opens files and does dup2 for redirection in child process
+int apply_redirection(const char *infile, const char *outfile, int in_pipe){
+    if(infile){
         int fd = open(infile, O_RDONLY);
-        if (fd < 0) {
+        if(fd < 0){
             perror(infile);
             return -1;
         }
         dup2(fd, STDIN_FILENO);
         close(fd);
-    } else if (!interactive && !in_pipe) {
+    } else if(!interactive && !in_pipe){
+        // batch mode defaults to /dev/null
         int fd = open("/dev/null", O_RDONLY);
-        if (fd >= 0) {
+        if(fd >= 0){
             dup2(fd, STDIN_FILENO);
             close(fd);
         }
     }
-    if (outfile) {
+    if(outfile){
         int fd = open(outfile, O_WRONLY | O_CREAT | O_TRUNC, 0640);
-        if (fd < 0) {
+        if(fd < 0){
             perror(outfile);
             return -1;
         }
@@ -214,14 +218,16 @@ int apply_redirection(const char *infile, const char *outfile, int in_pipe) {
     return 0;
 }
 
-void token_list_init(token_list_t *tl) {
+void token_list_init(token_list_t *tl){
     tl->tokens = malloc(INIT_CAP * sizeof(char *));
     tl->count = 0;
     tl->cap = INIT_CAP;
 }
 
-void token_list_free(token_list_t *tl) {
-    for (int i = 0; i < tl->count; i++) free(tl->tokens[i]);
+void token_list_free(token_list_t *tl){
+    for(int i=0; i<tl->count; i++){
+        free(tl->tokens[i]);
+    }
     free(tl->tokens);
     tl->tokens = NULL;
     tl->count = 0;
@@ -249,29 +255,61 @@ char* bare_name_search(char *program){
 
 
 // executes program for bare name
-void bare_names(token_list_t *tl, const char *infile, const char *outfile){
-    char *path;
-    if (strchr(tl->tokens[0], '/') != NULL) {
-        path = strdup(tl->tokens[0]);
-    } else {
-        path = bare_name_search(tl->tokens[0]);
-    }
+void bare_names(token_list_t *tl){
+
+    // if(strchr(tl->tokens[0],"/") != NULL){
+
+    // }
+
+    // uses the search of names and then stores it so it can be used in access
+    char *path = bare_name_search(tl->tokens[0]);
     if(path == NULL){
-        fprintf(stderr, "%s: command not found\n", tl->tokens[0]);
+        printf("bare_names: program not found\n");
         return;
     }
 
     pid_t pid = fork();
 
-    if(pid == 0){
-        if (apply_redirection(infile, outfile, 0) < 0) _exit(1);
+    if(pid == 0){ // in child process
+        execv(path, tl->tokens);
+        printf("LOG: if it reached here child failed\n");
+    }
+    else if(pid > 0){ // in parent process
+        waitpid(pid,NULL,0);
+        printf("LOG: bare names: child closed\n");
+    }
+    else{
+        printf("error in fork()\n");
+        return;
+    }
+}
+
+// like bare_names but with redirection support
+void exec_redirect(token_list_t *tl, const char *infile, const char *outfile){
+    char *path;
+    if(strchr(tl->tokens[0],'/') != NULL){
+        path = strdup(tl->tokens[0]);
+    } else{
+        path = bare_name_search(tl->tokens[0]);
+    }
+    if(path == NULL){
+        printf("%s: command not found\n",tl->tokens[0]);
+        return;
+    }
+
+    pid_t pid = fork();
+
+    if(pid == 0){ // child: set up redirection then exec
+        if(apply_redirection(infile, outfile, 0) < 0){
+            _exit(1);
+        }
         execv(path, tl->tokens);
         perror(path);
         _exit(1);
     }
     else if(pid > 0){
         int status;
-        waitpid(pid, &status, 0);
+        waitpid(pid,&status,0);
         free(path);
     }
     else{
@@ -292,8 +330,11 @@ int which_check(token_list_t *tl){
 
 // built in functions include:
     // cd, pwd, which, and exit
-int run_builtin_core(token_list_t *tl) {
+void built_in(token_list_t *tl){
+    printf("LOG: In built in\n");
     if(strcmp(tl->tokens[0],"cd") == 0){
+        printf("LOG: in cd\n");
+        // checks for excess of parameters
         char *newDir;
         if(tl->count == 1){
             newDir = getenv("HOME");
@@ -302,73 +343,83 @@ int run_builtin_core(token_list_t *tl) {
             newDir = tl->tokens[1];
         }
         else{
-            fprintf(stderr, "cd: too many arguments\n");
-            return 1;
+            printf("cd: too many arguments\n");
+            return;
         }
-        if(chdir(newDir) != 0){
-            perror("cd");
-            return 1;
+
+        int success = chdir(newDir);
+        if(success != 0){
+            printf("cd: no such file or directory\n");
+            return;
         }
-        return 0;
+        else{
+            printf("cd: now in %s\n",newDir);
+        }
+
     }
 
     else if(strcmp(tl->tokens[0],"pwd") == 0){
+        printf("LOG: in pwd\n");
+
         char buffer[1024];
-        if(getcwd(buffer,sizeof(buffer)) == NULL){
-            perror("pwd");
-            return 1;
+        char *currDir = getcwd(buffer,sizeof(buffer));
+        if(currDir == NULL){
+            printf("pwd: no working directory found\n");
         }
-        printf("%s\n",buffer);
-        return 0;
+        else{
+            printf("pwd: %s\n",buffer);
+        }
     }
 
     else if(strcmp(tl->tokens[0],"which") == 0){
-        if(tl->count != 2){
-            return 1;
+        printf("LOG: in which\n");
+
+        if(tl->count == 1){
+            printf("which: not the correct amount of arguments\n");
+            return;
         }
         if(which_check(tl) == -1){
-            return 1;
-        }
-        char *path = bare_name_search(tl->tokens[1]);
-        if(path == NULL){
-            return 1;
-        }
-        printf("%s\n",path);
-        free(path);
-        return 0;
-    }
-
-    return 0;
-}
-
-void built_in(token_list_t *tl, const char *infile, const char *outfile, int *should_exit){
-    if(strcmp(tl->tokens[0],"exit") == 0){
-        *should_exit = 1;
-        return;
-    }
-
-    if(strcmp(tl->tokens[0],"cd") == 0 && !infile && !outfile){
-        run_builtin_core(tl);
-        return;
-    }
-
-    if(infile || outfile){
-        pid_t pid = fork();
-        if(pid == 0){
-            if(apply_redirection(infile, outfile, 0) < 0) _exit(1);
-            int ret = run_builtin_core(tl);
-            _exit(ret);
-        }
-        else if(pid > 0){
-            int status;
-            waitpid(pid, &status, 0);
+            printf("which: cannot take built-in commands as arguments\n");
+            return;
         }
         else{
-            perror("fork");
+            char *path = bare_name_search(tl->tokens[1]);
+            if(path == NULL){
+                printf("which: program not found\n");
+                return;
+            }
+            printf("which: %s\n",path);
+            return;
         }
+
+    }
+
+    else if(strcmp(tl->tokens[0],"exit") == 0){
+        printf("LOG: in exit\n");
+        exit(0);
+    }
+
+    else{
+        return;
+    }
+}
+
+// runs a built-in inside a child with redirection applied
+void builtin_redirect(token_list_t *tl, const char *infile, const char *outfile){
+    pid_t pid = fork();
+    if(pid == 0){
+        if(apply_redirection(infile, outfile, 0) < 0){
+            _exit(1);
+        }
+        built_in(tl);
+        _exit(0);
+    }
+    else if(pid > 0){
+        int status;
+        waitpid(pid, &status, 0);
     }
     else{
-        run_builtin_core(tl);
+        perror("fork");
     }
 }
 
@@ -435,11 +486,10 @@ void apply_piping(token_list_t *tl){
 
             // check for built in or bare 
             if(strcmp(split[i].tokens[0],"cd") == 0 || strcmp(split[i].tokens[0],"pwd") == 0 || strcmp(split[i].tokens[0],"which") == 0 || strcmp(split[i].tokens[0],"exit") == 0){
-                int dummy_exit = 0;
-                built_in(&split[i], NULL, NULL, &dummy_exit);
+                built_in(&split[i]);
             }
             else{
-                bare_names(&split[i], NULL, NULL);
+                bare_names(&split[i]);
             }
 
             exit(0);
@@ -478,32 +528,42 @@ void apply_piping(token_list_t *tl){
 static char leftover[BUF_SIZE];
 static int leftover_len = 0;
 
-int read_line(int fd, char *out, int out_size) {
+int read_line(int fd, char *out, int out_size){
     int pos = 0;
-    while (leftover_len > 0 && pos < out_size - 1) {
+
+    // use up any leftover bytes from last read
+    while(leftover_len > 0 && pos < out_size - 1){
         char c = leftover[0];
-        memmove(leftover, leftover + 1, --leftover_len);
+        memmove(leftover, leftover+1, --leftover_len);
         out[pos++] = c;
-        if (c == '\n') { out[pos] = '\0'; return pos; }
-    }
-    char tmp[BUF_SIZE];
-    while (pos < out_size - 1) {
-        int n = read(fd, tmp, sizeof(tmp));
-        if (n <= 0) {
-            if (pos == 0) return -1;
+        if(c == '\n'){
             out[pos] = '\0';
             return pos;
         }
-        for (int i = 0; i < n; i++) {
-            if (tmp[i] == '\n') {
+    }
+
+    char tmp[BUF_SIZE];
+    while(pos < out_size - 1){
+        int n = read(fd, tmp, sizeof(tmp));
+        if(n <= 0){
+            if(pos == 0) return -1;
+            out[pos] = '\0';
+            return pos;
+        }
+        for(int i=0; i<n; i++){
+            if(tmp[i] == '\n'){
                 out[pos++] = '\n';
                 out[pos] = '\0';
+                // save the rest for next call
                 int rem = n - i - 1;
-                if (rem > 0) { memcpy(leftover, tmp + i + 1, rem); leftover_len = rem; }
+                if(rem > 0){
+                    memcpy(leftover, tmp+i+1, rem);
+                    leftover_len = rem;
+                }
                 return pos;
             }
             out[pos++] = tmp[i];
-            if (pos >= out_size - 1) break;
+            if(pos >= out_size - 1) break;
         }
     }
     out[pos] = '\0';
@@ -541,31 +601,36 @@ int main(int argc, char *argv[]) {
 
         if (read_line(input_fd, line, sizeof(line)) == -1) break;
 
-        // step 1: tokenize
+        // tokenize the line
         token_list_t tl;
         token_list_init(&tl);
         tokenize(line, &tl);
 
-        if (tl.count == 0) { token_list_free(&tl); continue; }
+        if(tl.count == 0){
+            token_list_free(&tl);
+            continue;
+        }
 
-        // step 2: expand wildcards
+        // expand wildcards but skip special tokens
         token_list_t expanded;
         token_list_init(&expanded);
-        for (int i = 0; i < tl.count; i++) {
-            if (strcmp(tl.tokens[i], "<") == 0 || strcmp(tl.tokens[i], ">") == 0 ||
-                strcmp(tl.tokens[i], "|") == 0)
+        for(int i=0; i<tl.count; i++){
+            if(strcmp(tl.tokens[i],"<") == 0 || strcmp(tl.tokens[i],">") == 0 ||
+               strcmp(tl.tokens[i],"|") == 0)
                 token_list_add(&expanded, tl.tokens[i]);
             else
                 expand_wildcard(tl.tokens[i], &expanded);
         }
         token_list_free(&tl);
 
-        // step 3: parse redirection
+        // pull out redirection
         char *infile, *outfile;
         int redir_ok = parse_redirection(&expanded, &infile, &outfile);
 
-        if (redir_ok < 0) {
-            free(infile); free(outfile); token_list_free(&expanded);
+        if(redir_ok < 0){
+            free(infile);
+            free(outfile);
+            token_list_free(&expanded);
             continue;
         }
 
@@ -579,18 +644,36 @@ int main(int argc, char *argv[]) {
         }
 
         if(found_pipe == 1){
-            free(infile); free(outfile); token_list_free(&expanded);
+            free(infile);
+            free(outfile);
+            token_list_free(&expanded);
             continue;
         }
         
         if(strcmp(expanded.tokens[0],"cd") == 0 || strcmp(expanded.tokens[0],"pwd") == 0 || strcmp(expanded.tokens[0],"which") == 0 || strcmp(expanded.tokens[0],"exit") == 0){
-            built_in(&expanded, infile, outfile, &should_exit);
-            free(infile); free(outfile); token_list_free(&expanded);
+            if(infile || outfile){
+                builtin_redirect(&expanded, infile, outfile);
+            }
+            else{
+                built_in(&expanded);
+            }
+            free(infile);
+            free(outfile);
+            token_list_free(&expanded);
+            continue;
+        }
+        else if(infile || outfile){
+            exec_redirect(&expanded, infile, outfile);
+            free(infile);
+            free(outfile);
+            token_list_free(&expanded);
             continue;
         }
         else{
-            bare_names(&expanded, infile, outfile);
-            free(infile); free(outfile); token_list_free(&expanded);
+            bare_names(&expanded);
+            free(infile);
+            free(outfile);
+            token_list_free(&expanded);
             continue;
         }
 
