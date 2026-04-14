@@ -228,6 +228,241 @@ void token_list_free(token_list_t *tl) {
     tl->cap = 0;
 }
 
+
+// search through the three paths given and return the path to the program
+// usr/local/bin, /usr/bin, and /bin, in that order
+char* bare_name_search(char *program){
+    char* dir_to_check[] = {"/usr/local/bin", "/usr/bin", "/bin"};
+    
+    for(int i=0; i<3; i++){
+        
+        char buffer[1024];
+        snprintf(buffer,sizeof(buffer),"%s/%s",dir_to_check[i],program);
+        if(access(buffer,X_OK) == 0){
+            // readable and executable
+            return strdup(buffer);
+        }
+    }
+
+    return NULL;
+}
+
+
+// executes program for bare name
+void bare_names(token_list_t *tl){
+    
+    // if(strchr(tl->tokens[0],"/") != NULL){
+
+    // }
+
+    // uses the search of names and then stores it so it can be used in access
+    char *path = bare_name_search(tl->tokens[0]);
+    if(path == NULL){
+        printf("bare_names: program not found\n");
+        return;
+    }
+
+    pid_t pid = fork();
+
+    if(pid == 0){ // in child process
+        execv(path, tl->tokens);
+        printf("LOG: if it reached here child failed\n");
+    }
+    else if(pid > 0){ // in parent process
+        waitpid(pid,NULL,0);
+        printf("LOG: bare names: child closed\n");
+    }
+    else{
+        printf("error in fork()\n");
+        return;
+    }
+}
+
+// checks for built in commands within which
+int which_check(token_list_t *tl){
+    for(int i=1; i<tl->count; i++){
+        if(strcmp(tl->tokens[1],"cd") == 0 || strcmp(tl->tokens[1],"pwd") == 0 || strcmp(tl->tokens[1],"which") == 0 || strcmp(tl->tokens[1],"exit") == 0){
+            return -1;
+        }
+    }
+    return 0;
+}
+
+// built in functions include:
+    // cd, pwd, which, and exit
+void built_in(token_list_t *tl){
+    printf("LOG: In built in\n");
+    if(strcmp(tl->tokens[0],"cd") == 0){
+        printf("LOG: in cd\n");
+        // checks for excess of parameters
+        char *newDir;
+        if(tl->count == 1){
+            newDir = getenv("HOME");
+        }
+        else if (tl->count == 2){
+            newDir = tl->tokens[1];
+        }
+        else{ 
+            printf("cd: too many arguments\n");   
+            return;         
+        }
+
+        int success = chdir(newDir);
+        if(success != 0){
+            printf("cd: no such file or directory\n");
+            return;
+        }
+        else{
+            printf("cd: now in %s\n",newDir);
+        }
+
+    }
+
+    else if(strcmp(tl->tokens[0],"pwd") == 0){
+        printf("LOG: in pwd\n");
+
+        char buffer[1024];
+        char *currDir = getcwd(buffer,sizeof(buffer));
+        if(currDir == NULL){
+            printf("pwd: no working directory found\n");
+        }
+        else{
+            printf("pwd: %s\n",buffer);
+        }
+    }
+
+    else if(strcmp(tl->tokens[0],"which") == 0){
+        printf("LOG: in which\n");
+
+        if(tl->count == 1){
+            printf("which: not the correct amount of arguments\n");
+            return;
+        }
+        if(which_check(tl) == -1){ 
+            printf("which: cannot take built-in commands as arguments\n");
+            return;
+        }
+        else{
+            char *path = bare_name_search(tl->tokens[1]);
+            if(path == NULL){
+                printf("which: program not found\n");
+                return;
+            }
+            printf("which: %s\n",path);
+            return;
+        }
+    
+    }
+
+    else if(strcmp(tl->tokens[0],"exit") == 0){
+        printf("LOG: in exit\n");
+        exit(0);
+    }
+
+    else{
+        return;
+    }
+}
+
+
+void apply_piping(token_list_t *tl){
+    
+    // splits all piping into their own tasks
+    int num_pipes = 0;
+    for(int i=0; i<tl->count; i++){
+        if(strcmp(tl->tokens[i],"|") == 0){
+            num_pipes++;
+        }
+    }
+
+    token_list_t split[num_pipes+1];
+    for(int i=0; i<num_pipes+1; i++){
+        token_list_init(&split[i]);
+    }
+
+    int counter = 0;
+    token_list_t *current = &split[counter];
+
+    for(int i=0; i<tl->count; i++){
+        if(strcmp(tl->tokens[i],"|") == 0){
+            counter++;
+            current = &split[counter];
+        }
+        else{
+            token_list_add(current,tl->tokens[i]);
+        }
+    }
+
+    // create pipeline
+    int previous_fd = -1;
+    pid_t pidTracker[num_pipes+1];
+
+    for(int i=0; i<num_pipes+1; i++){
+        int fd[2];
+
+        if(i < num_pipes){
+            pipe(fd);
+        }
+
+        pid_t pid = fork();
+
+        if(pid == 0){ // in child process
+            
+            if(previous_fd != -1){ // this is not the first index in the list
+                dup2(previous_fd,STDIN_FILENO);
+            }
+            if(i != num_pipes){ // this is not the last index in the list
+                dup2(fd[1],STDOUT_FILENO);
+            }
+
+            if(previous_fd != -1){
+                close(previous_fd);
+            }
+            if(i != num_pipes){
+                close(previous_fd);
+                close(fd[0]);
+                close(fd[1]);
+            }
+
+
+            // check for built in or bare 
+            if(strcmp(split[i].tokens[0],"cd") == 0 || strcmp(split[i].tokens[0],"pwd") == 0 || strcmp(split[i].tokens[0],"which") == 0 || strcmp(split[i].tokens[0],"exit") == 0){
+                built_in(&split[i]);
+            }
+            else{
+                bare_names(&split[i]);
+            }
+
+            exit(0);
+        }
+        else if(pid > 0){ // in parent process
+            
+            pidTracker[i] = pid;
+
+            if (previous_fd != -1) {
+                close(previous_fd);
+            }
+
+            if (i < num_pipes) {
+                close(fd[1]);
+                previous_fd = fd[0];
+            }
+
+        }
+        else{
+            printf("error in pipe\n");
+            return;
+        }
+    }
+
+    for(int i=0; i<num_pipes+1; i++){
+        waitpid(pidTracker[i],NULL,0);
+    }
+    
+}
+
+
+
 static char leftover[BUF_SIZE];
 static int leftover_len = 0;
 
@@ -271,11 +506,12 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
-    if (argc == 2) {
+    if (argc == 2) { // batch mode
         input_fd = open(argv[1], O_RDONLY);
         if (input_fd < 0) { perror(argv[1]); return EXIT_FAILURE; }
         interactive = 0;
-    } else {
+    } 
+    else { // interactive mode
         input_fd = STDIN_FILENO;
         interactive = isatty(STDIN_FILENO);
     }
@@ -332,6 +568,28 @@ int main(int argc, char *argv[]) {
         // TODO (partner): fork + apply_redirection + execv
         // TODO (partner): handle pipes (split expanded on |)
         // TODO (partner): waitpid + report status
+
+        int found_pipe = 0;
+
+        for(int i=0; i<expanded.count; i++){
+            if(strcmp(expanded.tokens[i],"|") == 0){
+                apply_piping(&expanded);
+                found_pipe = 1;
+            }
+        }
+
+        if(found_pipe == 1){
+            continue;
+        }
+        
+        if(strcmp(expanded.tokens[0],"cd") == 0 || strcmp(expanded.tokens[0],"pwd") == 0 || strcmp(expanded.tokens[0],"which") == 0 || strcmp(expanded.tokens[0],"exit") == 0){
+            built_in(&expanded);
+            continue;
+        }
+        else{
+            bare_names(&expanded);
+            continue;
+        }
 
         free(infile);
         free(outfile);
