@@ -615,8 +615,12 @@ int main(int argc, char *argv[]) {
                 write(STDOUT_FILENO, "~$ ", 3);
             }
             else{
-                write(STDOUT_FILENO, currwd, strlen(currwd));
-                write(STDOUT_FILENO, "$ ", 2);
+                if (strncmp(currwd, getenv("HOME"), strlen(getenv("HOME"))) == 0) {
+                    write(STDOUT_FILENO, "~", 1);
+                    write(STDOUT_FILENO, currwd+strlen(getenv("HOME")), strlen(currwd));
+                    write(STDOUT_FILENO, "$ ", 2);
+                }
+                
             }
         }
 
