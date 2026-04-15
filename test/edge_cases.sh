@@ -19,6 +19,7 @@ cat < out.txt
 ls | wc -l
 which cat | wc -c
 echo 1 2 3 4 5 | cat | cat | wc -w
+which ls | greeeee | wc
 
 ls *.c
 ls *.h

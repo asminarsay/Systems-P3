@@ -38,3 +38,16 @@ Main
     From there we tokenize the line, skip it if it's empty, then expand any wildcards. After that parse_redirection pulls out < and > tokens along with their filenames. If there's a syntax error there it prints a message and we skip the command.
     Then we check if there's a pipe in the tokens. If so we hand everything off to apply_piping and move on. If not, we check if the first token is a built-in (cd, pwd, which, exit). If there's redirection we use builtin_redirect which forks so the redirect doesn't mess with the parent, otherwise we just call built_in directly. If it's not a built-in and there's redirection we go through exec_redirect, and if there's no redirection at all we just call bare_names which handles both path-based executables (if it has a /) and searching through /usr/local/bin, /usr/bin, and /bin.
     Once the loop ends, either from the exit command or EOF, we print a goodbye message if interactive and close the file descriptor if we opened one. Main always returns EXIT_SUCCESS unless it couldn't open the script file.
+
+Testing
+    We created a directory called test which contains a file called edge_cases.sh
+    In this file, we tested all sorts of things such as:
+        - normal bare name and built in commands
+        - instances where built in commands are given too many arguments or not enough
+        - instances where "which" is paired with a built in command which should create and error
+        - testing redirection to see if it correctly outputs into files
+        - testing piping with multiple different pipes/processes
+        - testing piping with an error in one of the middle pipes, to see how it handles it going forward
+        - tested wildcard by listing files that matched the wildcard description
+        - attempting to change directories to go into a directory that does not exist
+        - exiting the program at the end
