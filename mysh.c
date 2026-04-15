@@ -48,10 +48,7 @@ void tokenize(char *line, token_list_t *tl){
         }
 
         int start = i;
-        while(line[i] != '\0' && line[i] != '\n' &&
-              !isspace((unsigned char)line[i]) &&
-              line[i] != '<' && line[i] != '>' &&
-              line[i] != '|' && line[i] != '#'){
+        while(line[i] != '\0' && line[i] != '\n' && !isspace((unsigned char)line[i]) && line[i] != '<' && line[i] != '>' && line[i] != '|' && line[i] != '#'){
             i++;
         }
         int len = i - start;
@@ -77,7 +74,7 @@ void expand_wildcard(char *token, token_list_t *tl){
         memcpy(dir, token, dir_len);
         dir[dir_len] = '\0';
         pattern = last_slash + 1;
-    }else{
+    } else{
         strcpy(dir, ".");
         pattern = token;
     }
@@ -88,7 +85,7 @@ void expand_wildcard(char *token, token_list_t *tl){
     int suf_len = strlen(suffix);
 
     DIR *dp = opendir(dir);
-    if (!dp){
+    if(!dp){
         token_list_add(tl, token);
         return;
     }
@@ -117,22 +114,22 @@ void expand_wildcard(char *token, token_list_t *tl){
     }
     closedir(dp);
 
-    if (nmatches == 0) {
+    if (nmatches == 0){
         token_list_add(tl, token);
         return;
     }
 
-    for (int i = 1; i < nmatches; i++) {
+    for (int i = 1; i < nmatches; i++){
         char *key = matches[i];
         int j = i - 1;
-        while (j >= 0 && strcmp(matches[j], key) > 0) {
+        while (j >= 0 && strcmp(matches[j], key) > 0){
             matches[j + 1] = matches[j];
             j--;
         }
         matches[j + 1] = key;
     }
 
-    for (int i = 0; i < nmatches; i++) {
+    for (int i = 0; i < nmatches; i++){
         token_list_add(tl, matches[i]);
         free(matches[i]);
     }
@@ -184,7 +181,10 @@ int parse_redirection(token_list_t *tl, char **infile, char **outfile){
     tl->count = clean.count;
     tl->cap = clean.cap;
 
-    return ok ? 0 : -1;
+    if(ok){
+        return 0;
+    }
+    return -1;
 }
 
 int apply_redirection(char *infile, char *outfile, int in_pipe){
