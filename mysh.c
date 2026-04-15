@@ -421,8 +421,10 @@ void built_in(token_list_t *tl, int isPipe){
     }
 
     else if(strcmp(tl->tokens[0],"exit") == 0){
-        printf("Exiting my shell!\n");
-        exit(0);
+    //    if(isPipe == 1){
+            printf("Exiting my shell!\n");
+            exit(0);
+     //   }
     }
 
     else{
