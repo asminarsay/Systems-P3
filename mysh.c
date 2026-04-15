@@ -287,7 +287,7 @@ void bare_names(token_list_t *tl, int isPipe){
         if(isPipe == 0){
             printf("error: bare_names: program not found\n");
         }
-        return -1;
+        return;
     }
 
     pid_t pid = fork();
@@ -303,7 +303,7 @@ void bare_names(token_list_t *tl, int isPipe){
         if(isPipe == 0){
             printf("error: in fork()\n");
         }
-        return -1;
+        return;
     }
 }
 
