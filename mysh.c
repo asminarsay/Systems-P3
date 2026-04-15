@@ -586,13 +586,16 @@ int main(int argc, char *argv[]) {
     int input_fd;
 
     if (argc > 2) {
-        fprintf(stderr, "Usage: mysh [script]\n");
+        fprintf(stderr, "too many arguments\n");
         return EXIT_FAILURE;
     }
 
     if (argc == 2) { // batch mode
         input_fd = open(argv[1], O_RDONLY);
-        if (input_fd < 0) { perror(argv[1]); return EXIT_FAILURE; }
+        if (input_fd < 0) { 
+            perror(argv[1]); 
+            return EXIT_FAILURE; 
+        }
         interactive = 0;
     } 
     else { // interactive mode
@@ -626,7 +629,9 @@ int main(int argc, char *argv[]) {
             }
         }
 
-        if (read_line(input_fd, line, sizeof(line)) == -1) break;
+        if (read_line(input_fd, line, sizeof(line)) == -1) {
+            break;
+        }
 
         // tokenize the line
         token_list_t tl;
@@ -642,12 +647,14 @@ int main(int argc, char *argv[]) {
         token_list_t expanded;
         token_list_init(&expanded);
         for(int i=0; i<tl.count; i++){
-            if(strcmp(tl.tokens[i],"<") == 0 || strcmp(tl.tokens[i],">") == 0 ||
-               strcmp(tl.tokens[i],"|") == 0)
+            if(strcmp(tl.tokens[i],"<") == 0 || strcmp(tl.tokens[i],">") == 0 || strcmp(tl.tokens[i],"|") == 0){
                 token_list_add(&expanded, tl.tokens[i]);
-            else
+            }
+            else{
                 expand_wildcard(tl.tokens[i], &expanded);
+            }
         }
+        
         token_list_free(&tl);
 
         // pull out redirection
