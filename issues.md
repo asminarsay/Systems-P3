@@ -68,18 +68,11 @@ else if(strcmp(tl->tokens[0],"exit") == 0){
 
 **Fix**: Store each `fork()` result in a `pids[]` array, then `waitpid(pids[i], &status, 0)` for each. Keep the status from `i == num_pipes` (last process).
 
-### b) Double-fork
-**Location**: apply_piping(), line 515
-
-**Current**: The pipeline child calls `bare_names(&split[i], 1)`, which forks again internally. Each pipeline stage creates two processes instead of one.
-
-**Fix**: Resolve the path and call `execv` directly in the pipeline child instead of going through `bare_names`.
 
 ### c) which cleanup
 **Location**: which_check() and built_in() which handler
 
 **Current**:
-- `which_check` loop always checks `tokens[1]` instead of `tokens[i]` (harmless but wrong)
 - `which` doesn't check for `tl->count > 2` (too many args should fail)
 - `which` leaks the `path` from `bare_name_search` (never freed)
 
