@@ -1,16 +1,5 @@
 # Issues to Fix in mysh.c
 
-## 1. Prompt format — ~ substitution for home subdirectories
-
-**Location**: main(), lines 611-621
-
-**Current**: `strcmp(getenv("HOME"), currwd) == 0` only matches when exactly at home directory.
-
-**Problem**: If you're at `/home/user/subdir`, the prompt shows `/home/user/subdir$` instead of `~/subdir$`.
-
-**Spec**: "if the working directory is within the user's home directory, the home directory portion of the path will be replaced by ~"
-
-**Fix**: Use `strncmp` to check if `currwd` starts with `home_dir`. Print `~` followed by the remaining path. Also check the character after the home prefix is `/` or `\0` so `/home/user` doesn't accidentally match `/home/username`.
 
 
 ## 2. Exit status reporting
