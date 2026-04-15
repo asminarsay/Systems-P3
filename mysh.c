@@ -6,6 +6,7 @@
 #include <sys/wait.h>
 #include <dirent.h>
 #include <ctype.h>
+#include <signal.h>
 
 #define BUF_SIZE 4096
 #define INIT_CAP 16
@@ -252,11 +253,15 @@ char* bare_name_search(char *program){
 
 
 // executes program for bare name
-void bare_names(token_list_t *tl, int isPipe){
+int bare_names(token_list_t *tl, int isPipe){
 
     if(strchr(tl->tokens[0],'/') != NULL){
         pid_t pid = fork();
         if(pid == 0){
+            if(!interactive && !isPipe){
+                int fd = open("/dev/null", O_RDONLY);
+                if(fd >= 0){ dup2(fd, STDIN_FILENO); close(fd); }
+            }
             if(access(tl->tokens[0],X_OK) == 0){
                 execv(tl->tokens[0],tl->tokens);
                 exit(1);
@@ -267,18 +272,18 @@ void bare_names(token_list_t *tl, int isPipe){
                 }
                 exit(1);
             }
-            exit(0);
         }
         else if(pid > 0){
-            waitpid(pid,NULL,0);
+            int status;
+            waitpid(pid,&status,0);
+            return status;
         }
         else{
             if(isPipe == 0){
                 printf("error: in fork()\n");
             }
-            return;
+            return -1;
         }
-        return; 
     }
 
     // uses the search of names and then stores it so it can be used in access
@@ -287,28 +292,36 @@ void bare_names(token_list_t *tl, int isPipe){
         if(isPipe == 0){
             printf("error: bare_names: program not found\n");
         }
-        return;
+        return -1;
     }
 
     pid_t pid = fork();
 
     if(pid == 0){ // in child process
+        if(!interactive && !isPipe){
+            int fd = open("/dev/null", O_RDONLY);
+            if(fd >= 0){ dup2(fd, STDIN_FILENO); close(fd); }
+        }
         execv(path, tl->tokens);
         exit(1);
     }
     else if(pid > 0){ // in parent process
-        waitpid(pid,NULL,0);
+        int status;
+        waitpid(pid,&status,0);
+        free(path);
+        return status;
     }
     else{
         if(isPipe == 0){
             printf("error: in fork()\n");
         }
-        return;
+        free(path);
+        return -1;
     }
 }
 
 
-void exec_redirect(token_list_t *tl, char *infile, char *outfile){
+int exec_redirect(token_list_t *tl, char *infile, char *outfile){
     char *path;
     if(strchr(tl->tokens[0],'/') != NULL){
         path = strdup(tl->tokens[0]);
@@ -317,7 +330,7 @@ void exec_redirect(token_list_t *tl, char *infile, char *outfile){
     }
     if(path == NULL){
         printf("%s: command not found\n",tl->tokens[0]);
-        return;
+        return -1;
     }
 
     pid_t pid = fork();
@@ -334,10 +347,12 @@ void exec_redirect(token_list_t *tl, char *infile, char *outfile){
         int status;
         waitpid(pid,&status,0);
         free(path);
+        return status;
     }
     else{
         printf("error in fork()\n");
         free(path);
+        return -1;
     }
 }
 
@@ -353,7 +368,7 @@ int which_check(token_list_t *tl){
 
 // built in functions include:
     // cd, pwd, which, and exit
-void built_in(token_list_t *tl, int isPipe){
+int built_in(token_list_t *tl, int isPipe){
 
     if(strcmp(tl->tokens[0],"cd") == 0){
         // checks for excess of parameters
@@ -366,15 +381,15 @@ void built_in(token_list_t *tl, int isPipe){
         }
         else{
             printf("cd: too many arguments\n");
-            return;
+            return 1;
         }
 
         int success = chdir(newDir);
         if(success != 0){
             printf("cd: no such file or directory\n");
-            return;
+            return 1;
         }
-        return;
+        return 0;
     }
 
     else if(strcmp(tl->tokens[0],"pwd") == 0){
@@ -385,74 +400,66 @@ void built_in(token_list_t *tl, int isPipe){
             if(isPipe == 0){
                 printf("pwd: no working directory found\n");
             }
-            return;
+            return 1;
         }
         else{
             printf("%s\n",buffer);
         }
+        return 0;
     }
 
     else if(strcmp(tl->tokens[0],"which") == 0){
-        
-        if(tl->count == 1){
-            if(isPipe == 0){
-                printf("which: not the correct amount of arguments\n");
-            }
-            return;
+
+        if(tl->count != 2){
+            return 1;
         }
         if(which_check(tl) == -1){
-            if(isPipe == 0){
-                printf("which: cannot take built-in commands as arguments\n");
-            }
-            return;
+            return 1;
         }
         else{
             char *path = bare_name_search(tl->tokens[1]);
             if(path == NULL){
-                if(isPipe == 0){
-                    printf("which: program not found\n");
-                }
-                return;
+                return 1;
             }
             printf("%s\n",path);
-            return;
+            free(path);
+            return 0;
         }
 
     }
 
     else if(strcmp(tl->tokens[0],"exit") == 0){
-    //    if(isPipe == 1){
-            printf("Exiting my shell!\n");
-            exit(0);
-     //   }
+        // when called from child process (pipe/redirect), just exit
+        exit(0);
     }
 
-    else{
-        return;
-    }
+    return 1;
 }
 
 
-void builtin_redirect(token_list_t *tl, char *infile, char *outfile){
+int builtin_redirect(token_list_t *tl, char *infile, char *outfile){
     pid_t pid = fork();
     if(pid == 0){
         if(apply_redirection(infile, outfile, 0) < 0){
             exit(1);
         }
-        built_in(tl,0);
-        exit(0);
+        int ret = built_in(tl,0);
+        exit(ret);
     }
     else if(pid > 0){
         int status;
         waitpid(pid, &status, 0);
+        return status;
     }
     else{
         printf("error in fork()\n");
+        return -1;
     }
 }
 
 
-void apply_piping(token_list_t *tl){
+int apply_piping(token_list_t *tl, int *has_exit){
+    *has_exit = 0;
 
     // splits all piping into their own tasks
     int num_pipes = 0;
@@ -479,7 +486,14 @@ void apply_piping(token_list_t *tl){
             token_list_add(current,tl->tokens[i]);
         }
     }
-    
+
+    // check if any sub-command is exit
+    for(int i=0; i<num_pipes+1; i++){
+        if(split[i].count > 0 && strcmp(split[i].tokens[0],"exit") == 0){
+            *has_exit = 1;
+        }
+    }
+
     int pre_defined_pipes[num_pipes][2];
 
     for(int i=0; i<num_pipes; i++){
@@ -487,15 +501,24 @@ void apply_piping(token_list_t *tl){
 
         if(temp == -1){
             printf("error creating pipes\n");
-            return;
+            for(int j=0; j<num_pipes+1; j++) token_list_free(&split[j]);
+            return -1;
         }
     }
 
+    pid_t pids[num_pipes+1];
+
     for(int i=0; i<num_pipes+1; i++){
-        pid_t pid = fork();
-        
-        if(pid == 0){ // in child process
-            
+        pids[i] = fork();
+
+        if(pids[i] == 0){ // in child process
+
+            // batch mode: first process gets /dev/null stdin
+            if(i == 0 && !interactive){
+                int fd = open("/dev/null", O_RDONLY);
+                if(fd >= 0){ dup2(fd, STDIN_FILENO); close(fd); }
+            }
+
             if(i != 0){ // this is not the first index in the list
                 dup2(pre_defined_pipes[i-1][0],STDIN_FILENO);
             }
@@ -508,10 +531,10 @@ void apply_piping(token_list_t *tl){
                 close(pre_defined_pipes[j][1]);
             }
 
-            // check for built in or bare 
+            // check for built in or bare
             if(strcmp(split[i].tokens[0],"cd") == 0 || strcmp(split[i].tokens[0],"pwd") == 0 || strcmp(split[i].tokens[0],"which") == 0 || strcmp(split[i].tokens[0],"exit") == 0){
-                built_in(&split[i],1);
-                exit(0);
+                int ret = built_in(&split[i],1);
+                exit(ret);
             }
             else{
                 bare_names(&split[i],1);
@@ -525,14 +548,20 @@ void apply_piping(token_list_t *tl){
         close(pre_defined_pipes[i][1]);
     }
 
+    int last_status = 0;
     for(int i=0; i<num_pipes+1; i++){
-        wait(NULL);
+        int status;
+        waitpid(pids[i], &status, 0);
+        if(i == num_pipes){
+            last_status = status;
+        }
     }
 
     for(int i=0; i<num_pipes+1; i++){
         token_list_free(&split[i]);
     }
 
+    return last_status;
 }
 
 
@@ -613,16 +642,17 @@ int main(int argc, char *argv[]) {
         if(interactive){
             char currwd[1024];
             getcwd(currwd,sizeof(currwd));
-            if(strcmp(getenv("HOME"),currwd) == 0){
-                write(STDOUT_FILENO, "~$ ", 3);
+            int hlen = strlen(home_dir);
+            if(hlen > 1 && strncmp(currwd, home_dir, hlen) == 0
+               && (currwd[hlen] == '/' || currwd[hlen] == '\0')){
+                write(STDOUT_FILENO, "~", 1);
+                if(currwd[hlen] != '\0')
+                    write(STDOUT_FILENO, currwd + hlen, strlen(currwd + hlen));
+                write(STDOUT_FILENO, "$ ", 2);
             }
             else{
-                if (strncmp(currwd, getenv("HOME"), strlen(getenv("HOME"))) == 0) {
-                    write(STDOUT_FILENO, "~", 1);
-                    write(STDOUT_FILENO, currwd+strlen(getenv("HOME")), strlen(currwd));
-                    write(STDOUT_FILENO, "$ ", 2);
-                }
-                
+                write(STDOUT_FILENO, currwd, strlen(currwd));
+                write(STDOUT_FILENO, "$ ", 2);
             }
         }
 
@@ -661,56 +691,81 @@ int main(int argc, char *argv[]) {
             continue;
         }
 
+        if(expanded.count == 0){
+            free(infile);
+            free(outfile);
+            token_list_free(&expanded);
+            continue;
+        }
+
         int found_pipe = 0;
+        int wait_status = 0;
+        int is_raw_wait = 0;
 
         for(int i=0; i<expanded.count; i++){
             if(strcmp(expanded.tokens[i],"|") == 0){
-                apply_piping(&expanded);
                 found_pipe = 1;
                 break;
             }
         }
 
-        if(found_pipe == 1){
+        if(found_pipe){
+            int has_exit = 0;
+            wait_status = apply_piping(&expanded, &has_exit);
+            is_raw_wait = 1;
+            if(has_exit) should_exit = 1;
             free(infile);
             free(outfile);
             token_list_free(&expanded);
-            continue;
         }
-        
-        if(strcmp(expanded.tokens[0],"cd") == 0 || strcmp(expanded.tokens[0],"pwd") == 0 || strcmp(expanded.tokens[0],"which") == 0 || strcmp(expanded.tokens[0],"exit") == 0){
+        else if(strcmp(expanded.tokens[0],"exit") == 0){
+            should_exit = 1;
+            free(infile);
+            free(outfile);
+            token_list_free(&expanded);
+        }
+        else if(strcmp(expanded.tokens[0],"cd") == 0 || strcmp(expanded.tokens[0],"pwd") == 0 || strcmp(expanded.tokens[0],"which") == 0){
             if(infile || outfile){
-                builtin_redirect(&expanded, infile, outfile);
+                wait_status = builtin_redirect(&expanded, infile, outfile);
+                is_raw_wait = 1;
             }
             else{
-                // if(strcmp(expanded.tokens[0],"exit") == 0){
-                //     break;
-                // }
-                built_in(&expanded,0);
+                wait_status = built_in(&expanded,0);
+                is_raw_wait = 0;
             }
             free(infile);
             free(outfile);
             token_list_free(&expanded);
-            continue;
         }
         else if(infile || outfile){
-            exec_redirect(&expanded, infile, outfile);
+            wait_status = exec_redirect(&expanded, infile, outfile);
+            is_raw_wait = 1;
             free(infile);
             free(outfile);
             token_list_free(&expanded);
-            continue;
         }
         else{
-            bare_names(&expanded,0);
+            wait_status = bare_names(&expanded,0);
+            is_raw_wait = 1;
             free(infile);
             free(outfile);
             token_list_free(&expanded);
-            continue;
         }
 
-        free(infile);
-        free(outfile);
-        token_list_free(&expanded);
+        // print exit status in interactive mode
+        if(interactive && !should_exit && is_raw_wait && wait_status >= 0){
+            if(WIFSIGNALED(wait_status)){
+                char msg[256];
+                int n = snprintf(msg, sizeof(msg), "Terminated by signal %d: %s\n",
+                                 WTERMSIG(wait_status), strsignal(WTERMSIG(wait_status)));
+                write(STDOUT_FILENO, msg, n);
+            } else if(WIFEXITED(wait_status) && WEXITSTATUS(wait_status) != 0){
+                char msg[64];
+                int n = snprintf(msg, sizeof(msg), "Exited with status %d\n",
+                                 WEXITSTATUS(wait_status));
+                write(STDOUT_FILENO, msg, n);
+            }
+        }
     }
 
     if (interactive) write(STDOUT_FILENO, "Exiting my shell.\n", 18);
