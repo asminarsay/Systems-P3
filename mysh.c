@@ -681,6 +681,9 @@ int main(int argc, char *argv[]) {
                 builtin_redirect(&expanded, infile, outfile);
             }
             else{
+                // if(strcmp(expanded.tokens[0],"exit") == 0){
+                //     break;
+                // }
                 built_in(&expanded,0);
             }
             free(infile);
