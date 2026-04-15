@@ -6,10 +6,10 @@ echo "Hello from mysh"
 which ls
 which pwd
 pwd
-which non_existent_cmd
+which command_dne
 
 
-echo "redirection test" > out.txt
+echo "testing redirection" > out.txt
 cat out.txt
 echo "new line" > out.txt
 cat out.txt
@@ -23,13 +23,13 @@ echo 1 2 3 4 5 | cat | cat | wc -w
 ls *.c
 ls *.h
 
-ls    -l    
+ls -l    
 
 command_that_dne
 cd /path/that/dne
 which
 cd eqwffeui wgnowebeoi
 cd ..
-pwd fdfdsfs
+pwd
 
 exit

@@ -1,1 +1,1 @@
-"redirection test"
+"new line"
