@@ -354,7 +354,7 @@ int which_check(token_list_t *tl){
 // built in functions include:
     // cd, pwd, which, and exit
 void built_in(token_list_t *tl, int isPipe){
-//    printf("LOG: In built in\n");
+
     if(strcmp(tl->tokens[0],"cd") == 0){
         // checks for excess of parameters
         char *newDir;
@@ -374,10 +374,7 @@ void built_in(token_list_t *tl, int isPipe){
             printf("cd: no such file or directory\n");
             return;
         }
-        else{
-        //    printf("cd: now in %s\n",newDir);
-        }
-
+        return;
     }
 
     else if(strcmp(tl->tokens[0],"pwd") == 0){
@@ -481,8 +478,6 @@ void apply_piping(token_list_t *tl){
         }
     }
     
-
-#if 1
     int pre_defined_pipes[num_pipes][2];
 
     for(int i=0; i<num_pipes; i++){
@@ -507,12 +502,8 @@ void apply_piping(token_list_t *tl){
             }
 
             for(int j=0; j<num_pipes; j++){
-                //if (j != i - 1) { 
-                    close(pre_defined_pipes[j][0]);
-               // }
-              //  if (j != i) {
-                    close(pre_defined_pipes[j][1]);
-              //  }
+                close(pre_defined_pipes[j][0]);
+                close(pre_defined_pipes[j][1]);
             }
 
             // check for built in or bare 
@@ -535,7 +526,6 @@ void apply_piping(token_list_t *tl){
     for(int i=0; i<num_pipes+1; i++){
         wait(NULL);
     }
-#endif
 
     for(int i=0; i<num_pipes+1; i++){
         token_list_free(&split[i]);

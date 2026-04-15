@@ -1,1 +1,1 @@
-/usr/bin/ls
+"redirection test"
