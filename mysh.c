@@ -375,7 +375,7 @@ void built_in(token_list_t *tl, int isPipe){
             return;
         }
         else{
-            printf("cd: now in %s\n",newDir);
+        //    printf("cd: now in %s\n",newDir);
         }
 
     }
@@ -396,6 +396,7 @@ void built_in(token_list_t *tl, int isPipe){
     }
 
     else if(strcmp(tl->tokens[0],"which") == 0){
+        
         if(tl->count == 1){
             if(isPipe == 0){
                 printf("which: not the correct amount of arguments\n");
@@ -439,7 +440,7 @@ void builtin_redirect(token_list_t *tl, char *infile, char *outfile){
         if(apply_redirection(infile, outfile, 0) < 0){
             exit(1);
         }
-        built_in(tl,1);
+        built_in(tl,0);
         exit(0);
     }
     else if(pid > 0){
@@ -616,7 +617,18 @@ int main(int argc, char *argv[]) {
     char line[BUF_SIZE];
 
     while (!should_exit) {
-        // TODO (partner): print prompt if interactive
+
+        if(interactive){
+            char currwd[1024];
+            getcwd(currwd,sizeof(currwd));
+            if(strcmp(getenv("HOME"),currwd) == 0){
+                write(STDOUT_FILENO, "~$ ", 3);
+            }
+            else{
+                write(STDOUT_FILENO, currwd, strlen(currwd));
+                write(STDOUT_FILENO, "$ ", 2);
+            }
+        }
 
         if (read_line(input_fd, line, sizeof(line)) == -1) break;
 
@@ -659,6 +671,7 @@ int main(int argc, char *argv[]) {
             if(strcmp(expanded.tokens[i],"|") == 0){
                 apply_piping(&expanded);
                 found_pipe = 1;
+                break;
             }
         }
 
