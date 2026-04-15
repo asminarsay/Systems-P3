@@ -252,34 +252,61 @@ char* bare_name_search(char *program){
 
 
 // executes program for bare name
-void bare_names(token_list_t *tl){
+void bare_names(token_list_t *tl, int isPipe){
 
-    // if(strchr(tl->tokens[0],"/") != NULL){
-
-    // }
+    if(strchr(tl->tokens[0],'/') != NULL){
+        pid_t pid = fork();
+        if(pid == 0){
+            if(access(tl->tokens[0],X_OK) == 0){
+                execv(tl->tokens[0],tl->tokens);
+                exit(1);
+            }
+            else{
+                if(isPipe == 0){
+                    printf("error: this path does not exist\n");
+                }
+                exit(1);
+            }
+            exit(0);
+        }
+        else if(pid > 0){
+            waitpid(pid,NULL,0);
+        }
+        else{
+            if(isPipe == 0){
+                printf("error: in fork()\n");
+            }
+            return;
+        }
+        return; 
+    }
 
     // uses the search of names and then stores it so it can be used in access
     char *path = bare_name_search(tl->tokens[0]);
     if(path == NULL){
-        printf("bare_names: program not found\n");
-        return;
+        if(isPipe == 0){
+            printf("error: bare_names: program not found\n");
+        }
+        return -1;
     }
 
     pid_t pid = fork();
 
     if(pid == 0){ // in child process
         execv(path, tl->tokens);
-        printf("LOG: if it reached here child failed\n");
+        exit(1);
     }
     else if(pid > 0){ // in parent process
         waitpid(pid,NULL,0);
-        printf("LOG: bare names: child closed\n");
     }
     else{
-        printf("error in fork()\n");
-        return;
+        if(isPipe == 0){
+            printf("error: in fork()\n");
+        }
+        return -1;
     }
 }
+
 
 void exec_redirect(token_list_t *tl, char *infile, char *outfile){
     char *path;
@@ -326,10 +353,9 @@ int which_check(token_list_t *tl){
 
 // built in functions include:
     // cd, pwd, which, and exit
-void built_in(token_list_t *tl){
-    printf("LOG: In built in\n");
+void built_in(token_list_t *tl, int isPipe){
+//    printf("LOG: In built in\n");
     if(strcmp(tl->tokens[0],"cd") == 0){
-        printf("LOG: in cd\n");
         // checks for excess of parameters
         char *newDir;
         if(tl->count == 1){
@@ -355,43 +381,49 @@ void built_in(token_list_t *tl){
     }
 
     else if(strcmp(tl->tokens[0],"pwd") == 0){
-        printf("LOG: in pwd\n");
 
         char buffer[1024];
         char *currDir = getcwd(buffer,sizeof(buffer));
         if(currDir == NULL){
-            printf("pwd: no working directory found\n");
+            if(isPipe == 0){
+                printf("pwd: no working directory found\n");
+            }
+            return;
         }
         else{
-            printf("pwd: %s\n",buffer);
+            printf("%s\n",buffer);
         }
     }
 
     else if(strcmp(tl->tokens[0],"which") == 0){
-        printf("LOG: in which\n");
-
         if(tl->count == 1){
-            printf("which: not the correct amount of arguments\n");
+            if(isPipe == 0){
+                printf("which: not the correct amount of arguments\n");
+            }
             return;
         }
         if(which_check(tl) == -1){
-            printf("which: cannot take built-in commands as arguments\n");
+            if(isPipe == 0){
+                printf("which: cannot take built-in commands as arguments\n");
+            }
             return;
         }
         else{
             char *path = bare_name_search(tl->tokens[1]);
             if(path == NULL){
-                printf("which: program not found\n");
+                if(isPipe == 0){
+                    printf("which: program not found\n");
+                }
                 return;
             }
-            printf("which: %s\n",path);
+            printf("%s\n",path);
             return;
         }
 
     }
 
     else if(strcmp(tl->tokens[0],"exit") == 0){
-        printf("LOG: in exit\n");
+        printf("Exiting my shell!\n");
         exit(0);
     }
 
@@ -400,13 +432,14 @@ void built_in(token_list_t *tl){
     }
 }
 
+
 void builtin_redirect(token_list_t *tl, char *infile, char *outfile){
     pid_t pid = fork();
     if(pid == 0){
         if(apply_redirection(infile, outfile, 0) < 0){
             exit(1);
         }
-        built_in(tl);
+        built_in(tl,1);
         exit(0);
     }
     else if(pid > 0){
@@ -420,7 +453,7 @@ void builtin_redirect(token_list_t *tl, char *infile, char *outfile){
 
 
 void apply_piping(token_list_t *tl){
-    
+
     // splits all piping into their own tasks
     int num_pipes = 0;
     for(int i=0; i<tl->count; i++){
@@ -446,76 +479,67 @@ void apply_piping(token_list_t *tl){
             token_list_add(current,tl->tokens[i]);
         }
     }
+    
 
-    // create pipeline
-    int previous_fd = -1;
-    pid_t pidTracker[num_pipes+1];
+#if 1
+    int pre_defined_pipes[num_pipes][2];
 
-    for(int i=0; i<num_pipes+1; i++){
-        int fd[2];
+    for(int i=0; i<num_pipes; i++){
+        int temp = pipe(pre_defined_pipes[i]);
 
-        if(i < num_pipes){
-            pipe(fd);
-        }
-
-        pid_t pid = fork();
-
-        if(pid == 0){ // in child process
-            
-            if(previous_fd != -1){ // this is not the first index in the list
-                dup2(previous_fd,STDIN_FILENO);
-            }
-            if(i != num_pipes){ // this is not the last index in the list
-                dup2(fd[1],STDOUT_FILENO);
-            }
-
-            if(previous_fd != -1){
-                close(previous_fd);
-            }
-            if(i != num_pipes){
-                close(previous_fd);
-                close(fd[0]);
-                close(fd[1]);
-            }
-
-
-            // check for built in or bare 
-            if(strcmp(split[i].tokens[0],"cd") == 0 || strcmp(split[i].tokens[0],"pwd") == 0 || strcmp(split[i].tokens[0],"which") == 0 || strcmp(split[i].tokens[0],"exit") == 0){
-                built_in(&split[i]);
-            }
-            else{
-                bare_names(&split[i]);
-            }
-
-            exit(0);
-        }
-        else if(pid > 0){ // in parent process
-            
-            pidTracker[i] = pid;
-
-            if (previous_fd != -1) {
-                close(previous_fd);
-            }
-
-            if (i < num_pipes) {
-                close(fd[1]);
-                previous_fd = fd[0];
-            }
-
-        }
-        else{
-            printf("error in pipe\n");
+        if(temp == -1){
+            printf("error creating pipes\n");
             return;
         }
     }
 
     for(int i=0; i<num_pipes+1; i++){
-        waitpid(pidTracker[i],NULL,0);
+        pid_t pid = fork();
+        
+        if(pid == 0){ // in child process
+            
+            if(i != 0){ // this is not the first index in the list
+                dup2(pre_defined_pipes[i-1][0],STDIN_FILENO);
+            }
+            if(i != num_pipes){ // this is not the last index in the list
+                dup2(pre_defined_pipes[i][1],STDOUT_FILENO);
+            }
+
+            for(int j=0; j<num_pipes; j++){
+                //if (j != i - 1) { 
+                    close(pre_defined_pipes[j][0]);
+               // }
+              //  if (j != i) {
+                    close(pre_defined_pipes[j][1]);
+              //  }
+            }
+
+            // check for built in or bare 
+            if(strcmp(split[i].tokens[0],"cd") == 0 || strcmp(split[i].tokens[0],"pwd") == 0 || strcmp(split[i].tokens[0],"which") == 0 || strcmp(split[i].tokens[0],"exit") == 0){
+                built_in(&split[i],1);
+                exit(0);
+            }
+            else{
+                bare_names(&split[i],1);
+                exit(0);
+            }
+        }
     }
+
+    for(int i=0; i<num_pipes; i++){
+        close(pre_defined_pipes[i][0]);
+        close(pre_defined_pipes[i][1]);
+    }
+
+    for(int i=0; i<num_pipes+1; i++){
+        wait(NULL);
+    }
+#endif
 
     for(int i=0; i<num_pipes+1; i++){
         token_list_free(&split[i]);
     }
+
 }
 
 
@@ -650,7 +674,7 @@ int main(int argc, char *argv[]) {
                 builtin_redirect(&expanded, infile, outfile);
             }
             else{
-                built_in(&expanded);
+                built_in(&expanded,0);
             }
             free(infile);
             free(outfile);
@@ -665,7 +689,7 @@ int main(int argc, char *argv[]) {
             continue;
         }
         else{
-            bare_names(&expanded);
+            bare_names(&expanded,0);
             free(infile);
             free(outfile);
             token_list_free(&expanded);
