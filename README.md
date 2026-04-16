@@ -48,17 +48,19 @@ After each command, if were in interactive mode we check the wait status. If the
 
 Once the loop ends, either from the exit command or EOF, we print a goodbye message if interactive and close the file descriptor if we opened one. Main always returns EXIT_SUCCESS unless it couldnt open the script file.
 
+
 Testing
-
-We made a test/ directory with multiple test scripts. edge_cases.sh covers the basics like normal built-in and bare name commands, but also the weird stuff -- built-ins with wrong argument counts, which on a built-in (which should fail silently), redirection into files, and multi-stage pipelines. We also specifically tested what happens when a middle pipe stage fails, plus wildcard expansion, trying to cd somewhere that doesnt exist, and a normal exit at the end.
-
-We also have separate test scripts for specific features:
-    - test_builtins.sh: cd to different directories, pwd, which with valid/invalid/built-in args
-    - test_redirection.sh: output redirect, input redirect, both at once, both orderings, built-in redirect
-    - test_pipes.sh: single pipes, multi-stage pipes, built-ins in pipes, long chains
-    - test_wildcards.sh: *.c, *.h (no match), test/* (subdir glob), no-match stays as-is
-    - test_comments.sh: full line comments, inline comments, leading whitespace comments
-    - test_syntax_errors.sh: < <, > >, bare redirects, | at start, double ||, recovery after errors
-    - test_paths.sh: /bin/echo, /bin/ls, nonexistent paths
-    - test_empty.sh: blank lines, multiple blank lines
-    - test_exit_pipe.sh: echo | exit terminates shell, commands after dont run
+    We created a directory called test which contains a file called edge_cases.sh
+    In this file, we tested all sorts of things such as:
+        - normal bare name and built in commands
+        - instances where built in commands are given too many arguments or not enough
+        - instances where "which" is paired with a built in command which should create and error
+        - testing redirection to see if it correctly outputs into files
+        - testing piping with multiple different pipes/processes
+        - testing piping with an error in one of the middle pipes, to see how it handles it going forward
+        - tested wildcard by listing files that matched the wildcard description
+        - attempting to change directories to go into a directory that does not exist
+        - exiting the program at the end
+    We also ran the following commands in the interactive mode to see if it works when testing the Exited with status X commands.:
+        - /bin/false (which is status 1)
+        - ls file_dne (which is status 2)
