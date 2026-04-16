@@ -423,14 +423,23 @@ int built_in(token_list_t *tl, int isPipe){
     else if(strcmp(tl->tokens[0],"which") == 0){
 
         if(tl->count != 2){
+            if(isPipe == 0){
+                printf("error: which: too many arguments\n");
+            }
             return 1;
         }
         if(which_check(tl) == -1){
+            if(isPipe == 0){
+                printf("error: which: cannot use built in in which\n");
+            }
             return 1;
         }
         else{
             char *path = bare_name_search(tl->tokens[1]);
             if(path == NULL){
+                if(isPipe == 0){
+                    printf("error: which: bare_name path not found\n");
+                }
                 return 1;
             }
             printf("%s\n",path);
