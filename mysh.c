@@ -163,8 +163,14 @@ int parse_redirection(token_list_t *tl, char **infile, char **outfile){
                 i += 2;
                 continue;
             }
-            if(tok[0] == '<'){ free(*infile); *infile = strdup(next); }
-            else{ free(*outfile); *outfile = strdup(next); }
+            if(tok[0] == '<'){
+                free(*infile);
+                *infile = strdup(next);
+            }
+            else{
+                free(*outfile);
+                *outfile = strdup(next);
+            }
             i += 2;
         } else{
             clean.tokens[clean.count++] = strdup(tok);
@@ -260,7 +266,10 @@ int bare_names(token_list_t *tl, int isPipe){
         if(pid == 0){
             if(!interactive && !isPipe){
                 int fd = open("/dev/null", O_RDONLY);
-                if(fd >= 0){ dup2(fd, STDIN_FILENO); close(fd); }
+                if(fd >= 0){
+                    dup2(fd, STDIN_FILENO);
+                    close(fd);
+                }
             }
             if(access(tl->tokens[0],X_OK) == 0){
                 execv(tl->tokens[0],tl->tokens);
@@ -300,7 +309,10 @@ int bare_names(token_list_t *tl, int isPipe){
     if(pid == 0){ // in child process
         if(!interactive && !isPipe){
             int fd = open("/dev/null", O_RDONLY);
-            if(fd >= 0){ dup2(fd, STDIN_FILENO); close(fd); }
+            if(fd >= 0){
+                dup2(fd, STDIN_FILENO);
+                close(fd);
+            }
         }
         execv(path, tl->tokens);
         exit(1);
@@ -429,7 +441,6 @@ int built_in(token_list_t *tl, int isPipe){
     }
 
     else if(strcmp(tl->tokens[0],"exit") == 0){
-        // when called from child process (pipe/redirect), just exit
         exit(0);
     }
 
@@ -443,8 +454,8 @@ int builtin_redirect(token_list_t *tl, char *infile, char *outfile){
         if(apply_redirection(infile, outfile, 0) < 0){
             exit(1);
         }
-        int ret = built_in(tl,0);
-        exit(ret);
+        built_in(tl,0);
+        exit(0);
     }
     else if(pid > 0){
         int status;
@@ -487,7 +498,6 @@ int apply_piping(token_list_t *tl, int *has_exit){
         }
     }
 
-    // check if any sub-command is exit
     for(int i=0; i<num_pipes+1; i++){
         if(split[i].count > 0 && strcmp(split[i].tokens[0],"exit") == 0){
             *has_exit = 1;
@@ -501,7 +511,9 @@ int apply_piping(token_list_t *tl, int *has_exit){
 
         if(temp == -1){
             printf("error creating pipes\n");
-            for(int j=0; j<num_pipes+1; j++) token_list_free(&split[j]);
+            for(int j=0; j<num_pipes+1; j++){
+                token_list_free(&split[j]);
+            }
             return -1;
         }
     }
@@ -513,10 +525,12 @@ int apply_piping(token_list_t *tl, int *has_exit){
 
         if(pids[i] == 0){ // in child process
 
-            // batch mode: first process gets /dev/null stdin
             if(i == 0 && !interactive){
                 int fd = open("/dev/null", O_RDONLY);
-                if(fd >= 0){ dup2(fd, STDIN_FILENO); close(fd); }
+                if(fd >= 0){
+                    dup2(fd, STDIN_FILENO);
+                    close(fd);
+                }
             }
 
             if(i != 0){ // this is not the first index in the list
@@ -532,11 +546,12 @@ int apply_piping(token_list_t *tl, int *has_exit){
             }
 
             // check for built in or bare
-            if(split[i].count == 0) exit(1);
-
+            if(split[i].count == 0){
+                exit(1);
+            }
             if(strcmp(split[i].tokens[0],"cd") == 0 || strcmp(split[i].tokens[0],"pwd") == 0 || strcmp(split[i].tokens[0],"which") == 0 || strcmp(split[i].tokens[0],"exit") == 0){
-                int ret = built_in(&split[i],1);
-                exit(ret);
+                built_in(&split[i],1);
+                exit(0);
             }
             else{
                 bare_names(&split[i],1);
@@ -709,8 +724,8 @@ int main(int argc, char *argv[]) {
         }
 
         int found_pipe = 0;
-        int wait_status = 0;
-        int is_raw_wait = 0;
+        int wstatus = 0;
+        int from_child = 0; // 1 if wstatus came from waitpid
 
         for(int i=0; i<expanded.count; i++){
             if(strcmp(expanded.tokens[i],"|") == 0){
@@ -721,8 +736,8 @@ int main(int argc, char *argv[]) {
 
         if(found_pipe){
             int has_exit = 0;
-            wait_status = apply_piping(&expanded, &has_exit);
-            is_raw_wait = 1;
+            wstatus = apply_piping(&expanded, &has_exit);
+            from_child = 1;
             if(has_exit) should_exit = 1;
             free(infile);
             free(outfile);
@@ -736,44 +751,43 @@ int main(int argc, char *argv[]) {
         }
         else if(strcmp(expanded.tokens[0],"cd") == 0 || strcmp(expanded.tokens[0],"pwd") == 0 || strcmp(expanded.tokens[0],"which") == 0){
             if(infile || outfile){
-                wait_status = builtin_redirect(&expanded, infile, outfile);
-                is_raw_wait = 1;
+                wstatus = builtin_redirect(&expanded, infile, outfile);
+                from_child = 1;
             }
             else{
-                wait_status = built_in(&expanded,0);
-                is_raw_wait = 0;
+                wstatus = built_in(&expanded,0);
+                from_child = 0;
             }
             free(infile);
             free(outfile);
             token_list_free(&expanded);
         }
         else if(infile || outfile){
-            wait_status = exec_redirect(&expanded, infile, outfile);
-            is_raw_wait = 1;
+            wstatus = exec_redirect(&expanded, infile, outfile);
+            from_child = 1;
             free(infile);
             free(outfile);
             token_list_free(&expanded);
         }
         else{
-            wait_status = bare_names(&expanded,0);
-            is_raw_wait = 1;
+            wstatus = bare_names(&expanded,0);
+            from_child = 1;
             free(infile);
             free(outfile);
             token_list_free(&expanded);
         }
 
-        // print exit status in interactive mode
-        if(interactive && !should_exit && is_raw_wait && wait_status >= 0){
-            if(WIFSIGNALED(wait_status)){
-                char msg[256];
-                int n = snprintf(msg, sizeof(msg), "Terminated by signal %d: %s\n",
-                                 WTERMSIG(wait_status), strsignal(WTERMSIG(wait_status)));
-                write(STDOUT_FILENO, msg, n);
-            } else if(WIFEXITED(wait_status) && WEXITSTATUS(wait_status) != 0){
-                char msg[64];
-                int n = snprintf(msg, sizeof(msg), "Exited with status %d\n",
-                                 WEXITSTATUS(wait_status));
-                write(STDOUT_FILENO, msg, n);
+        // show exit status if needed
+        if(interactive && !should_exit && from_child && wstatus >= 0){
+            if(WIFSIGNALED(wstatus)){
+                char buf[256];
+                int len = snprintf(buf,sizeof(buf),"Terminated by signal %d: %s\n",WTERMSIG(wstatus),strsignal(WTERMSIG(wstatus)));
+                write(STDOUT_FILENO,buf,len);
+            }
+            else if(WIFEXITED(wstatus) && WEXITSTATUS(wstatus) != 0){
+                char buf[64];
+                int len = snprintf(buf,sizeof(buf),"Exited with status %d\n",WEXITSTATUS(wstatus));
+                write(STDOUT_FILENO,buf,len);
             }
         }
     }
