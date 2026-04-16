@@ -33,4 +33,7 @@ cd eqwffeui wgnowebeoi
 cd ..
 pwd
 
+/bin/true
+/bin/false
+ls file_dne
 exit
