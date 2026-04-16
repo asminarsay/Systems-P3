@@ -20,11 +20,16 @@ NOTE: When redirection occurs, all errors for either path or command will be red
 
 Built-In Commands
 
-Using the function strcmp(), we can determine whether the first token provided to the shell is a built-in command and therefore can be run without forking a child process. cd, pwd, and exit will print error messages if something goes wrong (like wrong number of arguments or a bad path). which is the exception, the spec says it should print nothing and just fail silently if it gets the wrong number of arguments, a built-in name, or a program that doesnt exist. The shell keeps going after any error so the user can try again.
+The Program uses the tokenized values and strcmp() to detect whether a built in command is being used
+for built in commands, we did not need to start any child processes as they are built into the shell 
+If any errors are detected, processesing the command will stop, and it will print an error message to either the command line or the file the command is being redirected to. If the user makes the mistkae of having the wrong amount or types of arguments, it will let them try again as the loop does not end if there are any errors detected.
 
 Bare Name Commands
 
-bare_names looks for the possibility of executing the token directly first. If the token is not directly executable, bare_names_search is invoked to check the directories /usr/local/bin, /usr/bin and /bin. If the directory is valid (we can fork and execute the command) or NULL (and halt), the pipeline will not exit (it will be terminated only if this is the last command), which means that a command that fails during the execution does not produce any output, so the next command in the pipeline sees an empty input but continues execution of the pipeline. For example: ls | does_not_exist | wc does not produce any output; the expected result is zero (0) for each output field (standard output, standard error and exit status).
+The function bare_names also detects for executable files in the ery beginning. If it determines that the tokens are not executable files, it will go on to search for the program within the three given path, using bare_names_search. 
+If a path is obtained it runs it within a child process, if the path returns as NULL from the search the process will stop.
+This allows for pipelines to continue, because although an error was hit, it will stop the command and pass on NULL to the next pipe, thus allowing the pipeline to continue. 
+- For example: if which ls | does_not_exit | wc was run, it would return 0 0 0 because does_not_exist will return nothing to wc
 
 Pipelines
 
