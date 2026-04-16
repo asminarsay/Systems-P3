@@ -98,13 +98,24 @@ void expand_wildcard(char *token, token_list_t *tl){
     while ((ent = readdir(dp)) != NULL){
         char *name = ent->d_name;
 
-        if (name[0] == '.' && pattern[0] != '.') continue;
+        if (name[0] == '.' && pattern[0] != '.'){
+            continue;
+        }
 
         int nlen = strlen(name);
-        if (nlen < pre_len + suf_len) continue;
-        if (strncmp(name, pattern, pre_len) != 0) continue;
-        if (suf_len > 0 && strcmp(name + nlen - suf_len, suffix) != 0) continue;
+        if (nlen < pre_len + suf_len){
+            continue;
+        }
+        if (strncmp(name, pattern, pre_len) != 0){
+            continue;
+        }
+        if (suf_len > 0 && strcmp(name + nlen - suf_len, suffix) != 0){
+            continue;
+        }
 
+
+
+        
         char full[BUF_SIZE];
         if (strcmp(dir, ".") == 0)
             snprintf(full, sizeof(full), "%s", name);
@@ -498,6 +509,7 @@ int apply_piping(token_list_t *tl, int *has_exit){
         }
     }
 
+    // check if exit is in any of the segments
     for(int i=0; i<num_pipes+1; i++){
         if(split[i].count > 0 && strcmp(split[i].tokens[0],"exit") == 0){
             *has_exit = 1;
@@ -566,8 +578,8 @@ int apply_piping(token_list_t *tl, int *has_exit){
     }
 
     int last_status = 0;
+    int status;
     for(int i=0; i<num_pipes+1; i++){
-        int status;
         waitpid(pids[i], &status, 0);
         if(i == num_pipes){
             last_status = status;
@@ -604,7 +616,9 @@ int read_line(int fd, char *out, int out_size){
     while(pos < out_size - 1){
         int n = read(fd, tmp, sizeof(tmp));
         if(n <= 0){
-            if(pos == 0) return -1;
+            if(pos == 0){
+                return -1;
+            }
             out[pos] = '\0';
             return pos;
         }
@@ -621,7 +635,9 @@ int read_line(int fd, char *out, int out_size){
                 return pos;
             }
             out[pos++] = tmp[i];
-            if(pos >= out_size - 1) break;
+            if(pos >= out_size - 1){
+                break;
+            }
         }
     }
     out[pos] = '\0';
@@ -663,12 +679,13 @@ int main(int argc, char *argv[]) {
         if(interactive){
             char currwd[1024];
             getcwd(currwd,sizeof(currwd));
-            int hlen = strlen(home_dir);
-            if(hlen > 1 && strncmp(currwd, home_dir, hlen) == 0
-               && (currwd[hlen] == '/' || currwd[hlen] == '\0')){
+            int homelen = strlen(home_dir);
+            if(homelen > 1 && strncmp(currwd, home_dir, homelen) == 0
+               && (currwd[homelen] == '/' || currwd[homelen] == '\0')){
                 write(STDOUT_FILENO, "~", 1);
-                if(currwd[hlen] != '\0')
-                    write(STDOUT_FILENO, currwd + hlen, strlen(currwd + hlen));
+                if(currwd[homelen] != '\0'){
+                    write(STDOUT_FILENO, currwd + homelen, strlen(currwd + homelen));
+                }
                 write(STDOUT_FILENO, "$ ", 2);
             }
             else{
@@ -725,7 +742,7 @@ int main(int argc, char *argv[]) {
 
         int found_pipe = 0;
         int wstatus = 0;
-        int from_child = 0; // 1 if wstatus came from waitpid
+        int from_child = 0;
 
         for(int i=0; i<expanded.count; i++){
             if(strcmp(expanded.tokens[i],"|") == 0){
@@ -777,17 +794,16 @@ int main(int argc, char *argv[]) {
             token_list_free(&expanded);
         }
 
-        // show exit status if needed
         if(interactive && !should_exit && from_child && wstatus >= 0){
             if(WIFSIGNALED(wstatus)){
                 char buf[256];
-                int len = snprintf(buf,sizeof(buf),"Terminated by signal %d: %s\n",WTERMSIG(wstatus),strsignal(WTERMSIG(wstatus)));
-                write(STDOUT_FILENO,buf,len);
+                snprintf(buf,sizeof(buf),"Terminated by signal %d: %s\n",WTERMSIG(wstatus),strsignal(WTERMSIG(wstatus)));
+                write(STDOUT_FILENO,buf,strlen(buf));
             }
             else if(WIFEXITED(wstatus) && WEXITSTATUS(wstatus) != 0){
                 char buf[64];
-                int len = snprintf(buf,sizeof(buf),"Exited with status %d\n",WEXITSTATUS(wstatus));
-                write(STDOUT_FILENO,buf,len);
+                snprintf(buf,sizeof(buf),"Exited with status %d\n",WEXITSTATUS(wstatus));
+                write(STDOUT_FILENO,buf,strlen(buf));
             }
         }
     }
