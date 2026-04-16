@@ -29,3 +29,9 @@ Changed bare_names, exec_redirect, builtin_redirect, built_in, and apply_piping 
 
 ## Added signal.h
 Needed for strsignal() which we use to print signal names in the exit status messages.
+
+## Output buffering fix
+Built-in commands like pwd and which use printf which goes through stdios buffer. In batch mode stdout isnt a terminal so stdio uses full buffering, which meant printf output would pile up and come out all at once at the end instead of in the right order between external commands. Added fflush(stdout) at the top of the main loop so any buffered output from the previous command gets flushed before the next one runs.
+
+## Empty pipeline segment fix
+If someone typed something like | echo hello or echo hello | | echo world, the empty segment between the pipes would have zero tokens. The child process for that segment would try to strcmp on NULL and segfault. Added a check in apply_piping so if a segment has count 0 the child just exits immediately instead of crashing.

@@ -532,6 +532,8 @@ int apply_piping(token_list_t *tl, int *has_exit){
             }
 
             // check for built in or bare
+            if(split[i].count == 0) exit(1);
+
             if(strcmp(split[i].tokens[0],"cd") == 0 || strcmp(split[i].tokens[0],"pwd") == 0 || strcmp(split[i].tokens[0],"which") == 0 || strcmp(split[i].tokens[0],"exit") == 0){
                 int ret = built_in(&split[i],1);
                 exit(ret);
@@ -641,6 +643,7 @@ int main(int argc, char *argv[]) {
     char line[BUF_SIZE];
 
     while (!should_exit) {
+        fflush(stdout);
 
         if(interactive){
             char currwd[1024];
