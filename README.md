@@ -1,53 +1,64 @@
-Authors: adn54 ndg53
+Authors: ndg53 adn54
 
 Tokenization
-    tokenize is what breaks the input up. It walks the line one character at a time, splitting on whitespace. <, >, and | are their own tokens regardless of spacing around them. A # throws out whatever's left on the line. Empty lines just get skipped.
-    Wildcard Expansion
-    expand_wildcard gets called on any token that has a * somewhere in it. We figure out what directory to look in, then what the name has to start with and end with. opendir and readdir let us go through the entries and we check each one against those two parts. Anything starting with a dot gets ignored except when the pattern started with one too. Matches get alphabetically sorted then substituted in. No matches means the token just stays how it was.
+
+Tokenization works by breaking a string down to individual tokens or parts using whitespace for separation. The characters <, >, and | will always create their own token. The character #, will cause everything else in the line to be ignored. Leading and trailing whitespace from blank lines will be removed.
+
+Wildcard Expansion
+
+When wildcard expansion occurs, all tokens containing an asterisk (*) are passed to the expand_wildcard function, which extracts three pieces of information from the token(s) being processed. These include: (1) directory path to search; (2), file name prefix to match; and (3) file name suffix to match. The readdir() and opendir() system calls will be used to do this iteration. For tokens starting with a period (.) will not be considered unless the wildcard expression also begins with a period (.)). The matched tokens will be sorted and replaced in place; if no match is found, the token will remain as is.
 
 Redirection
-    Two functions handle this. parse_redirection goes through the tokens and when it finds a < or > it takes the filename that comes right after and stores it, then those tokens get removed from the list. We also check for bad cases there like a redirect followed immediately by another redirect or nothing at all. apply_redirection is what runs in the child process once we fork. It opens whichever files were specified and dup2 handles wiring them to stdin or stdout. 0640 is the mode for output files. Batch mode gets stdin pointed to /dev/null if nobody specified an input file.
 
-Execution with Redirection
-    exec_redirect and builtin_redirect are wrappers we added around the existing execution code. exec_redirect forks, calls apply_redirection in the child, then execv runs the program. builtin_redirect does basically the same thing but for built-in commands. The reason we fork for built-ins at all is that otherwise there's no way to redirect their output without it going to the terminal anyway. If there's nothing to redirect we don't bother with the wrappers, bare_names and built_in get called like normal.
-    NOTE: if there is an error with finding the path or any command in redirect methods, it will send the error message to the output file
+The parse_redirection function processes the list of tokens to locate instances of < and >. When either is found, the subsequent filename will be saved, and both tokens will be removed. The parse_redirection function will also detect cases where there are redirects in succession and if the last token in the token list is a redirect. The actual connecting of files to stdin and stdout is performed in apply_redirection by using dup2 called from the child process after forking. Output files will be created with a file mode of 0640 and, if no file path is passed to the input parameter during the call to apply_redirection, stdin will be connected to the special file /dev/null when operating in batch mode.
 
-Built In commands
-    The Program uses the tokenized values and strcmp() to detect whether a built in command is being used
-    for built in commands, we did not need to start any child processes as they are built into the shell 
-    If any errors are detected, processesing the command will stop, and it will print an error message to either the command line or the file the command is being redirected to. If the user makes the mistkae of having the wrong amount or types of arguments, it will let them try again as the loop does not end if there are any errors detected.
+Redirected Executions
+
+The functions exec_redirect and builtin_redirect are simply wrappers, but their only purpose is handling the redirection of output. The way exec_redirect does this is through an initial call to fork(), which creates a child process to run apply_redirection(), after which the child process is run using execv(). All we've really done is add another layer of abstraction on to this system. Builtin_redirect serves as a wrapper for execution of built-in commands as well as providing the same level of abstraction for built-ins without actually redirecting output from the shell to the stdout stream via fork().
+
+NOTE: When redirection occurs, all errors for either path or command will be redirected to the output file.
+
+Built-In Commands
+
+Using the function strcmp(), we can determine whether the first token provided to the shell is a built-in command and therefore can be run without forking a child process. cd, pwd, and exit will print error messages if something goes wrong (like wrong number of arguments or a bad path). which is the exception, the spec says it should print nothing and just fail silently if it gets the wrong number of arguments, a built-in name, or a program that doesnt exist. The shell keeps going after any error so the user can try again.
 
 Bare Name Commands
-    The function bare_names also detects for executable files in the ery beginning. If it determines that the tokens are not executable files, it will go on to search for the program within the three given path, using bare_names_search. 
-    If a path is obtained it runs it within a child process, if the path returns as NULL from the search the process will stop.
-    This allows for pipelines to continue, because although an error was hit, it will stop the command and pass on NULL to the next pipe, thus allowing the pipeline to continue. 
-    - For example: if which ls | does_not_exit | wc was run, it would return 0 0 0 because does_not_exist will return nothing to wc
+
+bare_names looks for the possibility of executing the token directly first. If the token is not directly executable, bare_names_search is invoked to check the directories /usr/local/bin, /usr/bin and /bin. If the directory is valid (we can fork and execute the command) or NULL (and halt), the pipeline will not exit (it will be terminated only if this is the last command), which means that a command that fails during the execution does not produce any output, so the next command in the pipeline sees an empty input but continues execution of the pipeline. For example: ls | does_not_exist | wc does not produce any output; the expected result is zero (0) for each output field (standard output, standard error and exit status).
 
 Pipelines
-    Here, we create a list of token_list_t structs so that each process, divided by the pipes, is treated independently of one another before we pass on information between the pipes.
-    - for example: which ls | grep bin | wc --> a list of token lists: [["which", "ls"], ["grep", "bin"], ["wc" ]]
-    The pipelines are created and stored before the actual forking of child processes begin. These pipelines are stored in a two dimensional array so that they can be stored and later be referred to when usinig the dup2() method. 
-    If any issues emerge in the pipeline when it comes to forking, it will print an error and return. 
-    If any issues emerge with the components of the pipes, aka the separate commands, the process will continue to the last process in the pipeline, but will feed it NULL information, such as the example shown in the previous section.
+
+After breaking the string into separate tokens separated by "|", we return an array of tokens to the command. The pipe() calls are performed prior to any calls to fork(). Each fork result gets stored in a pids array so we can waitpid on specific children later. All fd pairs are placed into a 2D array, so that all children that get forked will know the pipe they should read or write to when they get created. If a command fails during the pipeline, it does not write any output, so the next command in the pipeline sees there is no input and continues to execute its code. The exit status of the pipeline comes from the last process.
 
 Main
-    The main method checks arguments first to figure out which mode we're in. If there's one argument we open that file as the input source and set it to batch. If there's no argument we read from stdin and use isatty() to decide between interactive and batch. More than one argument just prints a usage message and exits.
-    We grab the HOME directory with getenv("HOME") at startup so we can use it for the prompt later. If we're interactive we print a welcome message before entering the loop.
-    read_line is how we get input. It uses read() to pull bytes from the input fd into a temp buffer and scans for a newline. Once it finds one, everything up to and including it gets returned as the current line, and whatever's left over gets saved in a static buffer for next time. That way we always get exactly one complete command per call and don't block waiting for more input when there's already a full command sitting there.
-    Inside the loop, if we're interactive we print the prompt. The prompt is the current working directory followed by dollar sign and a space. If the cwd starts with the home directory path that prefix gets swapped out for ~. Then we call read_line to grab one line. If it comes back -1 that means EOF so we break out.
-    From there we tokenize the line, skip it if it's empty, then expand any wildcards. After that parse_redirection pulls out < and > tokens along with their filenames. If there's a syntax error there it prints a message and we skip the command.
-    Then we check if there's a pipe in the tokens. If so we hand everything off to apply_piping and move on. If not, we check if the first token is a built-in (cd, pwd, which, exit). If there's redirection we use builtin_redirect which forks so the redirect doesn't mess with the parent, otherwise we just call built_in directly. If it's not a built-in and there's redirection we go through exec_redirect, and if there's no redirection at all we just call bare_names which handles both path-based executables (if it has a /) and searching through /usr/local/bin, /usr/bin, and /bin.
-    Once the loop ends, either from the exit command or EOF, we print a goodbye message if interactive and close the file descriptor if we opened one. Main always returns EXIT_SUCCESS unless it couldn't open the script file.
+
+argc gets checked first. One argument opens that file and sets batch mode. No arguments reads from stdin, and isatty() sorts out whether thats interactive or batch. More than one argument just prints usage and exits.
+
+HOME comes from getenv("HOME") early on so the prompt can use it. If interactive we print a welcome message before the loop starts.
+
+read_line is how we get input. It uses read() to pull a chunk of bytes from the input fd into a temp buffer, then scans through that chunk for a newline. Once it finds one, everything up to and including it gets returned as the current line, and whatever came after the newline gets saved in a static leftover buffer for the next call. That way we always get exactly one complete command per call and dont block waiting for more input when theres already a full command sitting there.
+
+Inside the loop we flush stdout first so any buffered printf output from the previous command actually shows up in the right order. Then if were interactive we print the prompt, which is the current working directory with the home directory prefix swapped out for ~ followed by a dollar sign and a space. We call read_line to grab one line and if it comes back -1 thats EOF so we break out.
+
+From there we tokenize the line, skip it if its empty, then expand any wildcards. After that parse_redirection pulls out < and > tokens along with their filenames. If theres a syntax error it prints a message and we skip the command. If the token list is empty after redirection parsing we also skip it so we dont crash on a NULL access.
+
+Then we check if theres a pipe in the tokens. If so we hand everything off to apply_piping which also checks if any segment of the pipeline is an exit command and reports that back. If not a pipe, we check if the first token is exit and if so we set should_exit and let the loop end naturally so the goodbye message at the bottom of main actually runs. If the first token is a built-in (cd, pwd, which) and theres redirection we use builtin_redirect which forks so the redirect doesnt mess with the parent, otherwise we just call built_in directly. If its not a built-in and theres redirection we go through exec_redirect, and if theres no redirection at all we just call bare_names which handles both path-based executables (if it has a /) and searching through /usr/local/bin, /usr/bin, and /bin.
+
+After each command, if were in interactive mode we check the wait status. If the command exited with a non-zero code we print "Exited with status N" and if it got killed by a signal we print "Terminated by signal".
+
+Once the loop ends, either from the exit command or EOF, we print a goodbye message if interactive and close the file descriptor if we opened one. Main always returns EXIT_SUCCESS unless it couldnt open the script file.
 
 Testing
-    We created a directory called test which contains a file called edge_cases.sh
-    In this file, we tested all sorts of things such as:
-        - normal bare name and built in commands
-        - instances where built in commands are given too many arguments or not enough
-        - instances where "which" is paired with a built in command which should create and error
-        - testing redirection to see if it correctly outputs into files
-        - testing piping with multiple different pipes/processes
-        - testing piping with an error in one of the middle pipes, to see how it handles it going forward
-        - tested wildcard by listing files that matched the wildcard description
-        - attempting to change directories to go into a directory that does not exist
-        - exiting the program at the end
+
+We made a test/ directory with multiple test scripts. edge_cases.sh covers the basics like normal built-in and bare name commands, but also the weird stuff -- built-ins with wrong argument counts, which on a built-in (which should fail silently), redirection into files, and multi-stage pipelines. We also specifically tested what happens when a middle pipe stage fails, plus wildcard expansion, trying to cd somewhere that doesnt exist, and a normal exit at the end.
+
+We also have separate test scripts for specific features:
+    - test_builtins.sh: cd to different directories, pwd, which with valid/invalid/built-in args
+    - test_redirection.sh: output redirect, input redirect, both at once, both orderings, built-in redirect
+    - test_pipes.sh: single pipes, multi-stage pipes, built-ins in pipes, long chains
+    - test_wildcards.sh: *.c, *.h (no match), test/* (subdir glob), no-match stays as-is
+    - test_comments.sh: full line comments, inline comments, leading whitespace comments
+    - test_syntax_errors.sh: < <, > >, bare redirects, | at start, double ||, recovery after errors
+    - test_paths.sh: /bin/echo, /bin/ls, nonexistent paths
+    - test_empty.sh: blank lines, multiple blank lines
+    - test_exit_pipe.sh: echo | exit terminates shell, commands after dont run
